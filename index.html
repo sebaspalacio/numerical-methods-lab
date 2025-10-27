@@ -11,40 +11,43 @@
   <style>
     /* ===== Adventure Time–ish Theme ===== */
     :root{
-      --c-bg:#fcfbff; --c-card:#ffffff; --c-ink:#18212f; --c-soft:#6b7280;
-      --c-primary:#7c3aed; --c-primary-2:#22d3ee; --c-accent:#f472b6; --c-lime:#a3e635;
-      --rad:20px;
+      --c-bg: #fcfbff;
+      --c-card: #ffffff;
+      --c-ink: #18212f;
+      --c-soft: #6b7280;
+      --c-primary: #7c3aed; /* grape */
+      --c-primary-2: #22d3ee; /* cyan candy */
+      --c-accent: #f472b6; /* bubblegum */
+      --rad: 20px;
     }
     body{ background: radial-gradient(1200px 700px at 10% -20%, #fef6ff, transparent),
                        radial-gradient(800px 600px at 110% 10%, #ecfeff, transparent),
-                       var(--c-bg); color:var(--c-ink); }
-    .title{ font-weight:900; letter-spacing:.2px; }
-    .card{ background:var(--c-card); border-radius:var(--rad); box-shadow:0 20px 40px rgba(24,33,47,.05); padding:1.25rem; }
-    .btn{ border-radius:14px; padding:.6rem 1rem; font-weight:600; }
-    .btn-primary{ background:linear-gradient(90deg,var(--c-primary),var(--c-primary-2)); color:#fff; }
-    .btn-primary:hover{ filter:brightness(1.03); }
+                       var(--c-bg); color: var(--c-ink); }
+    .title{ font-weight: 900; letter-spacing: .2px; }
+    .card{ background: var(--c-card); border-radius: var(--rad); box-shadow: 0 20px 40px rgba(24,33,47,.05); padding: 1.25rem; }
+    .btn{ border-radius: 14px; padding:.6rem 1rem; font-weight:600; }
+    .btn-primary{ background: linear-gradient(90deg,var(--c-primary),var(--c-primary-2)); color:#fff; }
+    .btn-primary:hover{ filter: brightness(1.03); }
     .btn-soft{ background:#f3f4f6; color:#111827; }
     .btn-soft:hover{ background:#e5e7eb; }
-    .select,.input,textarea{ width:100%; border:1px solid #e5e7eb; border-radius:14px; padding:.55rem .8rem; outline:none; }
-    .select:focus,.input:focus,textarea:focus{ box-shadow:0 0 0 3px rgba(124,58,237,.15); border-color:#ddd6fe; }
-    .badge{ display:inline-block; padding:.2rem .6rem; border-radius:999px; font-size:.75rem; font-weight:700; }
-    .ok{ background:#ecfeff; color:#0e7490; }
-    .warn{ background:#fff7ed; color:#b45309; }
-    .err{ background:#fee2e2; color:#991b1b; }
-    .hint{ color:#6b7280; font-size:.9rem; }
-    .table{ width:100%; border-collapse:collapse; }
-    .table th,.table td{ border-bottom:1px solid #eef2f7; padding:.55rem; text-align:right; font-variant-numeric:tabular-nums; }
+    .badge{ display:inline-block; padding:.2rem .6rem; border-radius:999px; font-size:.75rem; font-weight:700;}
+    .ok{ background:#ecfeff; color:#0e7490;}
+    .warn{ background:#fff7ed; color:#b45309;}
+    .err{ background:#fee2e2; color:#991b1b;}
+    .input, .select, textarea{ width:100%; border:1px solid #e5e7eb; border-radius:14px; padding:.55rem .8rem; outline:none;}
+    .input:focus, .select:focus, textarea:focus{ box-shadow:0 0 0 3px rgba(124,58,237,.15); border-color:#ddd6fe;}
+    .hint{ color:#6b7280; font-size:.9rem;}
+    .table{ width:100%; border-collapse: collapse; }
+    .table th, .table td{ border-bottom:1px solid #eef2f7; padding:.55rem; text-align:right; font-variant-numeric: tabular-nums; }
     .table th{ color:#374151; text-align:center; }
-    .code{ font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-           background:#f8fafc; padding:.15rem .35rem; border-radius:8px; font-size:.85rem; }
-    .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
-    @media (max-width:1024px){ .grid-2{ grid-template-columns:1fr; } }
-
-    /* History modal */
-    .modal{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50; }
-    .modal.open{ display:flex; }
-    .modal-card{ max-height:80vh; overflow:auto; width:min(960px,95vw); }
-    .chip{ display:inline-block; padding:.15rem .5rem; border-radius:999px; background:#f3f4f6; font-size:.75rem; font-weight:700; }
+    .code{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#f8fafc; padding:.15rem .35rem; border-radius:8px; font-size:.85rem;}
+    .grid-2{ display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 1024px){ .grid-2{ grid-template-columns:1fr; } }
+    .matrix-grid input{ width:90px; text-align:right; }
+    .drawer{ position: fixed; right: 0; top: 0; height: 100vh; width: 420px; max-width: 90vw; background: #fff; box-shadow: -12px 0 24px rgba(0,0,0,.08); transform: translateX(100%); transition: transform .25s ease; z-index: 50; }
+    .drawer.open{ transform: translateX(0%); }
+    .drawer-header{ display:flex; align-items:center; justify-content:space-between; padding: 1rem 1rem; border-bottom:1px solid #eef2f7;}
+    .soft-hr{ height:1px; background:linear-gradient(90deg,transparent,#e5e7eb,transparent); }
   </style>
 </head>
 <body class="min-h-screen">
@@ -52,15 +55,15 @@
     <!-- Hero -->
     <header class="mb-6">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-2xl grid place-items-center text-xl" style="background:conic-gradient(from 180deg,#fff 0deg,#fff 260deg,#f1f5f9 360deg)">🧁</div>
+        <div class="w-10 h-10 rounded-2xl grid place-items-center text-xl" style="background: conic-gradient(from 180deg at 50% 50%, #fff 0deg, #fff 260deg, #f1f5f9 360deg);">🧁</div>
         <h1 class="title text-3xl">Numerical Methods Lab</h1>
       </div>
-      <p class="hint mt-2">Pick a method, enter your data, and the app will guide you. If a method can’t be applied, you’ll get gentle hints to fix it — like a friendly side-quest 🗺️.</p>
+      <p class="hint mt-2">Choose a method, enter your data, and let the app guide you. If something can’t be applied, you’ll get gentle tips to fix it.</p>
     </header>
 
-    <!-- Controls -->
+    <!-- Mode + Method + History -->
     <div class="card mb-6">
-      <div class="grid lg:grid-cols-[1fr,1fr,1fr,auto] gap-4 items-end">
+      <div class="grid lg:grid-cols-4 gap-4 items-end">
         <div>
           <label class="block text-sm font-semibold mb-1">Workspace</label>
           <div class="flex gap-2">
@@ -69,25 +72,18 @@
           </div>
           <p class="hint mt-2">Toggle between <span class="code">f(x)=0</span> solvers and Gaussian elimination.</p>
         </div>
-
         <div>
           <label class="block text-sm font-semibold mb-1">Method</label>
-          <!-- JS populates this select according to workspace -->
+          <!-- Will be populated by JS based on workspace -->
           <select id="methodSelect" class="select"></select>
         </div>
-
-        <div>
-          <label class="block text-sm font-semibold mb-1">Presets (Try it!)</label>
-          <div class="flex gap-2">
-            <select id="presetSelect" class="select"></select>
-            <button id="loadPresetBtn" class="btn btn-soft">Load</button>
-          </div>
-        </div>
-
         <div class="flex gap-2">
           <button id="runBtn" class="btn btn-primary w-full">Run</button>
           <button id="resetBtn" class="btn btn-soft w-full">Reset</button>
+        </div>
+        <div class="flex gap-2">
           <button id="historyBtn" class="btn btn-soft w-full">History</button>
+          <a id="deepLink" class="btn btn-soft w-full" href="#" target="_blank" rel="noopener">Share Link</a>
         </div>
       </div>
     </div>
@@ -100,7 +96,7 @@
 
           <label class="block text-sm font-semibold mb-1">f(x)</label>
           <input id="fxInput" class="input" value="x**3 - 7*x + 6" placeholder="Example: x**3 - 7*x + 6" />
-          <p class="hint mb-3">You can use <span class="code">sin</span>, <span class="code">cos</span>, <span class="code">exp</span>, <span class="code">log</span>, <span class="code">sqrt</span>. <em>x^2</em> auto-converts to <em>x**2</em>.</p>
+          <p class="hint mb-3">Use <span class="code">sin</span>, <span class="code">cos</span>, <span class="code">exp</span>, <span class="code">log</span>, <span class="code">sqrt</span>. <em>x^2</em> auto-converts to <em>x**2</em>.</p>
 
           <div id="gxGroup" class="hidden">
             <label class="block text-sm font-semibold mb-1">g(x) (for Fixed Point)</label>
@@ -157,7 +153,7 @@
           <h2 class="text-lg font-semibold mb-3">Status & Guidance</h2>
           <div id="alertsBox" class="space-y-2 mb-4"></div>
           <div id="summaryBox" class="mb-4"></div>
-          <div id="plot" class="w-full rounded-xl border border-gray-200" style="height:480px"></div>
+          <div id="plot" class="w-full rounded-xl border border-gray-200" style="height:520px"></div>
         </div>
       </div>
 
@@ -176,7 +172,7 @@
         <div>
           <h2 class="text-lg font-semibold mb-3">Inputs — Gaussian Elimination</h2>
 
-          <!-- Matrix input mode -->
+          <!-- Matrix input mode switch -->
           <div class="flex gap-2 mb-3">
             <button id="modePaste" class="btn btn-primary" aria-pressed="true">Paste Matrix</button>
             <button id="modeBuild" class="btn btn-soft" aria-pressed="false">Build Matrix</button>
@@ -210,8 +206,12 @@
             </div>
 
             <div class="grid lg:grid-cols-[1fr,auto] gap-6">
-              <div><div id="AGrid"></div></div>
-              <div><div id="bGrid"></div></div>
+              <div>
+                <div id="AGrid" class="matrix-grid"></div>
+              </div>
+              <div>
+                <div id="bGrid" class="matrix-grid"></div>
+              </div>
             </div>
 
             <p class="hint mt-2">Type numbers into the grid. You can switch back to “Paste Matrix” anytime.</p>
@@ -231,4 +231,669 @@
               </select>
             </div>
           </div>
-        </div
+        </div>
+
+        <div>
+          <h2 class="text-lg font-semibold mb-3">Status & Guidance</h2>
+          <div id="lAlertsBox" class="space-y-2 mb-4"></div>
+          <div id="lSummaryBox" class="mb-2"></div>
+          <div id="permBox" class="hint"></div>
+        </div>
+      </div>
+
+      <div id="lTableBox" class="mt-6">
+        <h3 class="text-lg font-semibold mb-2">Solution</h3>
+        <div class="overflow-auto rounded-xl border border-gray-200">
+          <table id="lTable" class="table"></table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-sm text-gray-500 mt-8">
+      Tip: expressions like <span class="code">x^2 + 3*x</span> are auto-converted to <span class="code">x**2 + 3*x</span>. Libraries: Tailwind & Plotly.
+    </footer>
+  </div>
+
+  <!-- History Drawer -->
+  <aside id="historyDrawer" class="drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <h3 class="text-lg font-semibold">Recent Runs</h3>
+      <div class="flex gap-2">
+        <button id="exportHistBtn" class="btn btn-soft">Export</button>
+        <button id="clearHistBtn" class="btn btn-soft">Clear</button>
+        <button id="closeHistBtn" class="btn btn-primary">Close</button>
+      </div>
+    </div>
+    <div id="historyList" class="p-3 space-y-3 overflow-auto" style="height: calc(100vh - 64px);"></div>
+  </aside>
+
+  <script>
+    /* ================= UI Grab ================= */
+    const tabRoot = document.getElementById('tabRoot');
+    const tabLinear = document.getElementById('tabLinear');
+    const methodSelect = document.getElementById('methodSelect');
+    const runBtn = document.getElementById('runBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const historyBtn = document.getElementById('historyBtn');
+    const deepLink = document.getElementById('deepLink');
+
+    /* Root refs */
+    const rootPanel = document.getElementById('rootPanel');
+    const fxInput = document.getElementById('fxInput');
+    const gxGroup = document.getElementById('gxGroup');
+    const gxInput = document.getElementById('gxInput');
+    const aInput = document.getElementById('aInput');
+    const bInput = document.getElementById('bInput');
+    const deltaGroup = document.getElementById('deltaGroup');
+    const deltaInput = document.getElementById('deltaInput');
+    const nmaxInput = document.getElementById('nmaxInput');
+    const x0Input = document.getElementById('x0Input');
+    const x1Input = document.getElementById('x1Input');
+    const x1Col = document.getElementById('x1Col');
+    const tolInput = document.getElementById('tolInput');
+    const kmaxInput = document.getElementById('kmaxInput');
+    const alertsBox = document.getElementById('alertsBox');
+    const summaryBox = document.getElementById('summaryBox');
+    const plotDiv = document.getElementById('plot');
+    const iterTable = document.getElementById('iterTable');
+    const last3Box = document.getElementById('last3Box');
+
+    /* Linear refs */
+    const linearPanel = document.getElementById('linearPanel');
+    const AInput = document.getElementById('AInput');
+    const bVecInput = document.getElementById('bVecInput');
+    const ltolInput = document.getElementById('ltolInput');
+    const pivotSelect = document.getElementById('pivotSelect');
+    const lAlertsBox = document.getElementById('lAlertsBox');
+    const lSummaryBox = document.getElementById('lSummaryBox');
+    const lTable = document.getElementById('lTable');
+    const permBox = document.getElementById('permBox');
+
+    /* Matrix builder refs */
+    const modePaste = document.getElementById('modePaste');
+    const modeBuild = document.getElementById('modeBuild');
+    const pastePanel = document.getElementById('pastePanel');
+    const buildPanel = document.getElementById('buildPanel');
+    const nSizeInput = document.getElementById('nSizeInput');
+    const buildBtn = document.getElementById('buildBtn');
+    const clearGridBtn = document.getElementById('clearGridBtn');
+    const AGrid = document.getElementById('AGrid');
+    const bGrid = document.getElementById('bGrid');
+
+    /* History Drawer refs */
+    const histDrawer = document.getElementById('historyDrawer');
+    const historyList = document.getElementById('historyList');
+    const closeHistBtn = document.getElementById('closeHistBtn');
+    const clearHistBtn = document.getElementById('clearHistBtn');
+    const exportHistBtn = document.getElementById('exportHistBtn');
+
+    /* ================= Method catalogs ================= */
+    const ROOT_METHODS = [
+      { value: 'incremental',   label: 'Incremental Search' },
+      { value: 'bisection',     label: 'Bisection' },
+      { value: 'falsePosition', label: 'False Position (Regula Falsi)' },
+      { value: 'fixedPoint',    label: 'Fixed Point' },
+      { value: 'newton',        label: 'Newton–Raphson' },
+      { value: 'secant',        label: 'Secant' },
+      { value: 'multiple',      label: 'Modified Newton (Multiple Roots)' },
+    ];
+    const LINEAR_METHODS = [
+      { value: 'gaussNone',    label: 'Gaussian Elimination (No Pivoting)' },
+      { value: 'gaussPartial', label: 'Gaussian Elimination (Partial Pivoting)' },
+      { value: 'gaussTotal',   label: 'Gaussian Elimination (Total Pivoting)' },
+    ];
+
+    /* ================= App State ================= */
+    let appMode = 'root'; // 'root' | 'linear'
+    let buildMode = 'paste'; // 'paste' | 'build'
+
+    /* ================= Helpers ================= */
+    const alertMsg = (t,kind='warn')=>{
+      const c = kind==='ok'?'ok': kind==='error'?'err':'warn';
+      return `<div class="rounded-xl border px-3 py-2 ${c}">${t}</div>`; };
+    const setHTML=(el,html)=>el.innerHTML=html;
+    const appendHTML=(el,html)=>el.insertAdjacentHTML('beforeend',html);
+
+    function normalizeExpr(s){ return String(s).replace(/\^/g,'**').replace(/√/g,'sqrt'); }
+    function buildFn(expr){ const src=normalizeExpr(expr); return new Function('x',`with(Math){return (${src});}`); }
+    function d1(phi,x,h=1e-6){ return (phi(x+h)-phi(x-h))/(2*h); }
+    function d2(phi,x,h=1e-5){ return (phi(x+h)-2*phi(x)+phi(x-h))/(h*h); }
+    function maxAbsDeriv(phi,a,b,n=60){ let m=0; for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; m=Math.max(m,Math.abs(d1(phi,x))); } return m; }
+    function linspace(a,b,n){ const xs=[]; for(let i=0;i<n;i++) xs.push(a+(b-a)*i/(n-1)); return xs; }
+    function round(v,d=10){ const f=Number(v); if(!isFinite(f)) return String(v); return Math.abs(f)>=1e-2&&Math.abs(f)<1e6? f.toFixed(d): f.toExponential(3); }
+
+    /* ================= Populate methods based on workspace ================= */
+    function populateMethodsFor(mode, keepCurrent = true) {
+      const prev = keepCurrent ? methodSelect.value : null;
+      const list = (mode === 'root') ? ROOT_METHODS : LINEAR_METHODS;
+      methodSelect.innerHTML = '';
+      for (const m of list) {
+        const opt = document.createElement('option');
+        opt.value = m.value; opt.textContent = m.label;
+        methodSelect.appendChild(opt);
+      }
+      const candidates = list.map(o => o.value);
+      if (prev && candidates.includes(prev)) methodSelect.value = prev;
+      else methodSelect.value = list[0].value;
+    }
+
+    /* ================= UI behaviors ================= */
+    function syncVisibility(){
+      const m = methodSelect.value;
+      const showDelta = (m==='incremental');
+      const showGx    = (m==='fixedPoint');
+      const showX1    = (m==='secant');
+      deltaGroup.classList.toggle('hidden', !showDelta);
+      gxGroup.classList.toggle('hidden', !showGx);
+      x1Col.classList.toggle('hidden', !showX1);
+      if (appMode==='linear') pivotSelect.value = methodSelect.value;
+      updateDeepLink();
+    }
+
+    function setMode(newMode){
+      appMode = newMode;
+
+      if (appMode === 'root'){
+        rootPanel.classList.remove('hidden');
+        linearPanel.classList.add('hidden');
+        tabRoot.classList.add('btn-primary'); tabRoot.classList.remove('btn-soft');
+        tabLinear.classList.add('btn-soft');   tabLinear.classList.remove('btn-primary');
+        populateMethodsFor('root');
+      } else {
+        linearPanel.classList.remove('hidden');
+        rootPanel.classList.add('hidden');
+        tabLinear.classList.add('btn-primary'); tabLinear.classList.remove('btn-soft');
+        tabRoot.classList.add('btn-soft');      tabRoot.classList.remove('btn-primary');
+        populateMethodsFor('linear');
+        pivotSelect.value = methodSelect.value;
+      }
+      syncVisibility();
+      clearRootOutputs();
+      clearLinearOutputs();
+    }
+
+    tabRoot.addEventListener('click',()=>setMode('root'));
+    tabLinear.addEventListener('click',()=>setMode('linear'));
+
+    methodSelect.addEventListener('change', () => {
+      if (appMode === 'linear') pivotSelect.value = methodSelect.value;
+      syncVisibility();
+      clearRootOutputs(); clearLinearOutputs();
+    });
+
+    pivotSelect.addEventListener('change', () => {
+      if (appMode === 'linear') {
+        methodSelect.value = pivotSelect.value;
+        syncVisibility();
+      }
+    });
+
+    function clearRootOutputs(){ setHTML(alertsBox,''); setHTML(summaryBox,''); setHTML(iterTable,''); setHTML(last3Box,''); Plotly.purge(plotDiv); }
+    function clearLinearOutputs(){ setHTML(lAlertsBox,''); setHTML(lSummaryBox,''); setHTML(lTable,''); setHTML(permBox,''); }
+
+    resetBtn.addEventListener('click', ()=>{
+      if (appMode==='root'){
+        fxInput.value="x**3 - 7*x + 6"; gxInput.value="(x + (7*x - 6)/3)/2";
+        aInput.value="0.5"; bInput.value="3.0"; x0Input.value="1.5"; x1Input.value="2.5";
+        tolInput.value="1e-6"; kmaxInput.value="100"; deltaInput.value="0.5"; nmaxInput.value="100";
+        clearRootOutputs();
+      } else {
+        AInput.value="2 -1 0 3\n1 0.5 3 8\n0 13 -2 11\n14 5 -2 3";
+        bVecInput.value="1 1 1 1"; ltolInput.value="1e-12"; pivotSelect.value="gaussNone"; methodSelect.value="gaussNone";
+        clearGrid(); clearLinearOutputs();
+      }
+      updateDeepLink();
+    });
+
+    /* ================= Plot & Tables ================= */
+    function plotFx(phi,a,b,iterXs=[],label='iter'){
+      try {
+        const xs=linspace(a,b,300), ys=xs.map(x=>{ const y=phi(x); return Number.isFinite(y)?y:NaN; });
+        const trace={x:xs,y:ys,type:'scatter',mode:'lines',name:'f(x)'};
+        const it=iterXs.length?{x:iterXs,y:iterXs.map(phi),mode:'markers+lines',type:'scatter',name:label,marker:{size:8},line:{dash:'dot'}}:null;
+        Plotly.newPlot('plot', it?[trace,it]:[trace], {margin:{l:36,r:12,t:10,b:36},xaxis:{title:'x'},yaxis:{title:'y'}},{displayModeBar:false,responsive:true});
+      } catch(e){
+        setHTML(alertsBox, alertMsg("Plotting failed. Check f(x) over the interval.", 'warn'));
+        Plotly.purge(plotDiv);
+      }
+    }
+    function renderTable(headers, rows, target){
+      const thead='<thead><tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr></thead>';
+      const tbody='<tbody>'+rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody>';
+      target.innerHTML=thead+tbody;
+    }
+    function renderLast3(rows, mount){
+      if(!rows.length) return setHTML(mount,'');
+      const last=rows.slice(-3).map(r=>'['+r.join(', ')+']').join('<br/>');
+      setHTML(mount, `<div class="hint"><span class="badge ok">Last 3 rows</span><div class="mt-1 code">${last}</div></div>`);
+    }
+
+    /* ================= Root methods ================= */
+    function incrementalSearch(phi,x0,delta,nmax){
+      if(delta===0) return { bracket:null, msg:"Delta must be non-zero." };
+      let x1=x0+delta; if(phi(x0)===0) return { bracket:[x0,x0], msg:"Exact root at start." };
+      for(let k=0;k<Number(nmax);k++){ const y0=phi(x0), y1=phi(x1); if(y0*y1<0) return { bracket:[x0,x1], msg:`Sign change in [${x0}, ${x1}]` }; x0=x1; x1=x1+delta; }
+      return { bracket:null, msg:"No sign change found. Try a different start, range, or delta." };
+    }
+    function bisection(phi,a,b,tol,kmax){
+      const rows=[]; let fa=phi(a), fb=phi(b);
+      if(fa===0) return { rows:[[0,a,b,a,phi(a),0,(b-a)/2]], root:a, err:0, k:0 };
+      if(fb===0) return { rows:[[0,a,b,b,phi(b),0,(b-a)/2]], root:b, err:0, k:0 };
+      if(fa*fb>0) return { error:"No sign change on [a,b]. Please bracket the root first." };
+      let xmOld=a, xm=a, fm=phi(a);
+      for(let k=1;k<=kmax;k++){ xm=(a+b)/2; fm=phi(xm); const errX=Math.abs(xm-xmOld), errB=(b-a)/2;
+        rows.push([k, round(a), round(b), round(xm), round(fm,6), round(errX,6), round(errB,6)]);
+        if(fm===0 || errB<=tol || errX<=tol) return { rows, root:xm, err:errX, k };
+        if(fa*fm<0){ b=xm; fb=fm; } else { a=xm; fa=fm; } xmOld=xm;
+      }
+      return { rows, root:xm, err:(b-a)/2, k:kmax };
+    }
+    function falsePosition(phi,a,b,tol,kmax){
+      const rows=[]; let fa=phi(a), fb=phi(b);
+      if(fa*fb>0) return { error:"No sign change on [a,b]. Please bracket the root first." };
+      let xmOld=a, xm=a;
+      for(let k=1;k<=kmax;k++){ fa=phi(a); fb=phi(b); const denom=fb-fa; if(denom===0) return { error:"Zero denominator; try a different interval." };
+        xm=b - fb*(b-a)/denom; const fm=phi(xm), err=Math.abs(xm-xmOld);
+        rows.push([k, round(a), round(b), round(xm), round(fm,6), round(err,6)]);
+        if(fm===0 || err<=tol) return { rows, root:xm, err, k };
+        if(fa*fm<0){ b=xm; } else { a=xm; } xmOld=xm;
+      }
+      return { rows, root:xm, err:Math.abs(xm-xmOld), k:kmax };
+    }
+    function fixedPoint(psi,a,b,x0,tol,kmax){
+      const rows=[]; const kEst=maxAbsDeriv(psi,a,b);
+      let warn = (kEst>=1)? `Estimated max |g'| ≈ ${kEst.toFixed(3)} ≥ 1 on [${a},${b}] — try another g(x) or a tighter interval.`: null;
+      for(let k=1;k<=kmax;k++){ const x1=psi(x0), err=Math.abs(x1-x0); rows.push([k,round(x0),round(x1),round(err,6)]); if(err<=tol) return { rows, root:x1, err, k, warn }; x0=x1; }
+      return { rows, root:x0, err:rows.at(-1)?.[3], k:kmax, warn };
+    }
+    function newton(phi,x0,tol,kmax){
+      const rows=[]; for(let k=1;k<=kmax;k++){ const fp=d1(phi,x0); if(Math.abs(fp)<1e-12) return { rows, error:"Derivative ~ 0; try a different x0 or bracket first." };
+        const x1=x0 - phi(x0)/fp, err=Math.abs(x1-x0); rows.push([k,round(x0),round(phi(x0),6),round(fp,6),round(x1),round(err,6)]);
+        if(err<=tol) return { rows, root:x1, err, k }; x0=x1; }
+      return { rows, root:x0, err:rows.at(-1)?.[5], k:kmax };
+    }
+    function secant(phi,x0,x1,tol,kmax){
+      const rows=[]; for(let k=1;k<=kmax;k++){ const f0=phi(x0), f1=phi(x1), denom=f1-f0; if(Math.abs(denom)<1e-14) return { rows, error:"Denominator ~ 0; restart with different seeds or bracket first." };
+        const x2=x1 - f1*(x1-x0)/denom, err=Math.abs(x2-x1); rows.push([k,round(x0),round(x1),round(x2),round(phi(x2),6),round(err,6)]);
+        if(err<=tol) return { rows, root:x2, err, k }; x0=x1; x1=x2; }
+      return { rows, root:x1, err:rows.at(-1)?.[5], k:kmax };
+    }
+    function modifiedNewton(phi,x0,tol,kmax){
+      const rows=[]; for(let k=1;k<=kmax;k++){ const fx=phi(x0), fp=d1(phi,x0), fpp=d2(phi,x0), denom=fp*fp - fx*fpp;
+        if(Math.abs(denom)<1e-14) return { rows, error:"Unstable step: denominator ~ 0. Try a different x0 or bracket first." };
+        const x1=x0 - fx*fp/denom, err=Math.abs(x1-x0); rows.push([k,round(x0),round(fx,6),round(fp,6),round(fpp,6),round(x1),round(err,6)]);
+        if(err<=tol) return { rows, root:x1, err, k }; x0=x1; }
+      return { rows, root:x0, err:rows.at(-1)?.[6], k:kmax };
+    }
+
+    /* ================= Linear systems ================= */
+    function parseMatrix(text){
+      const rows=String(text).trim().split(/\n+/).map(line=> line.trim().split(/[,\s]+/).filter(Boolean).map(Number));
+      const n=rows.length; if(!rows.every(r=>r.length===n)) throw new Error("A must be square (n x n)."); return rows;
+    }
+    function parseVector(text){ return String(text).trim().split(/[,\s]+/).filter(Boolean).map(Number); }
+    function backSubstitution(U,b,tol=1e-12){
+      const n=U.length, x=Array(n).fill(0);
+      if(Math.abs(U[n-1][n-1])<=tol) throw new Error("Back substitution failed: near-zero pivot at last row.");
+      x[n-1]=b[n-1]/U[n-1][n-1];
+      for(let i=n-2;i>=0;i--){ let s=0; for(let j=i+1;j<n;j++) s+=U[i][j]*x[j]; if(Math.abs(U[i][i])<=tol) throw new Error(`Back substitution failed at row ${i}: near-zero pivot.`);
+        x[i]=(b[i]-s)/U[i][i]; }
+      return x;
+    }
+    function gaussNoPivot(Ain, bin, tol=1e-12){
+      const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length;
+      for(let k=0;k<n-1;k++){ if(Math.abs(A[k][k])<=tol) throw new Error("Zero/near-zero pivot. Try Partial/Total Pivoting or rescale.");
+        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+      return { x: backSubstitution(A,b,tol) };
+    }
+    function gaussPartial(Ain,bin,tol=1e-12){
+      const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length;
+      for(let k=0;k<n-1;k++){ let p=k, maxv=Math.abs(A[k][k]); for(let i=k+1;i<n;i++){ const v=Math.abs(A[i][k]); if(v>maxv){maxv=v;p=i;} }
+        if(maxv<=tol) throw new Error("All candidate pivots ~ 0. Singular/ill-conditioned.");
+        if(p!==k){ const tr=A[k]; A[k]=A[p]; A[p]=tr; const tb=b[k]; b[k]=b[p]; b[p]=tb; }
+        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+      return { x: backSubstitution(A,b,tol) };
+    }
+    function gaussTotal(Ain,bin,tol=1e-12){
+      const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length, colPerm=Array.from({length:n},(_,i)=>i);
+      for(let k=0;k<n-1;k++){ let p=k,q=k,maxv=Math.abs(A[k][k]); for(let i=k;i<n;i++) for(let j=k;j<n;j++){ const v=Math.abs(A[i][j]); if(v>maxv){ maxv=v; p=i; q=j; } }
+        if(maxv<=tol) throw new Error("Active submatrix ~ 0. Singular/ill-conditioned.");
+        if(p!==k){ const tr=A[k]; A[k]=A[p]; A[p]=tr; const tb=b[k]; b[k]=b[p]; b[p]=tb; }
+        if(q!==k){ for(let i=0;i<n;i++){ const t=A[i][k]; A[i][k]=A[i][q]; A[i][q]=t; } const tp=colPerm[k]; colPerm[k]=colPerm[q]; colPerm[q]=tp; }
+        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+      const y=backSubstitution(A,b,tol), x=Array(n).fill(0); for(let j=0;j<n;j++) x[colPerm[j]]=y[j];
+      return { x, colPerm };
+    }
+
+    /* ============== Matrix Builder ============== */
+    function setBuildMode(m){
+      buildMode=m;
+      if (m==='paste'){
+        pastePanel.classList.remove('hidden'); buildPanel.classList.add('hidden');
+        modePaste.classList.add('btn-primary'); modePaste.classList.remove('btn-soft');
+        modeBuild.classList.add('btn-soft'); modeBuild.classList.remove('btn-primary');
+      } else {
+        buildPanel.classList.remove('hidden'); pastePanel.classList.add('hidden');
+        modeBuild.classList.add('btn-primary'); modeBuild.classList.remove('btn-soft');
+        modePaste.classList.add('btn-soft'); modePaste.classList.remove('btn-primary');
+      }
+    }
+    modePaste.addEventListener('click', ()=>setBuildMode('paste'));
+    modeBuild.addEventListener('click', ()=>setBuildMode('build'));
+
+    function clearGrid(){ AGrid.innerHTML=''; bGrid.innerHTML=''; }
+    function buildGrid(){
+      clearGrid();
+      const n = Math.max(1, Math.min(8, Number(nSizeInput.value)||3));
+      // Build A
+      const tA = document.createElement('table'); tA.className='table';
+      const thA = document.createElement('thead'); const trh=document.createElement('tr');
+      for (let j=0;j<n;j++){ const th=document.createElement('th'); th.textContent='A[:, '+(j+1)+']'; trh.appendChild(th); } thA.appendChild(trh); tA.appendChild(thA);
+      const tbA=document.createElement('tbody');
+      for (let i=0;i<n;i++){
+        const tr=document.createElement('tr');
+        for (let j=0;j<n;j++){
+          const td=document.createElement('td'); const inp=document.createElement('input'); inp.className='input'; inp.placeholder='0'; td.appendChild(inp); tr.appendChild(td);
+        }
+        tbA.appendChild(tr);
+      }
+      tA.appendChild(tbA); AGrid.appendChild(tA);
+      // Build b
+      const tB = document.createElement('table'); tB.className='table';
+      const thB = document.createElement('thead'); const trbh=document.createElement('tr'); const thb=document.createElement('th'); thb.textContent='b'; trbh.appendChild(thb); thB.appendChild(trbh); tB.appendChild(thB);
+      const tbB=document.createElement('tbody');
+      for (let i=0;i<n;i++){ const tr=document.createElement('tr'); const td=document.createElement('td'); const inp=document.createElement('input'); inp.className='input'; inp.placeholder='0'; td.appendChild(inp); tr.appendChild(td); tbB.appendChild(tr); }
+      tB.appendChild(tbB); bGrid.appendChild(tB);
+    }
+    buildBtn.addEventListener('click', buildGrid);
+    clearGridBtn.addEventListener('click', clearGrid);
+
+    function collectGrid(){
+      const n = bGrid.querySelectorAll('tbody tr').length;
+      if (!n){ throw new Error('Build the matrix grid first.'); }
+      const A=[], b=[];
+      const rowsA = AGrid.querySelectorAll('tbody tr');
+      rowsA.forEach(tr=>{
+        const row=[];
+        tr.querySelectorAll('input').forEach(inp=> row.push(Number(inp.value||'0')));
+        A.push(row);
+      });
+      const rowsB = bGrid.querySelectorAll('tbody tr');
+      rowsB.forEach(tr=>{
+        const inp = tr.querySelector('input'); b.push(Number(inp.value||'0'));
+      });
+      return { A, b };
+    }
+
+    /* ================= History (localStorage) ================= */
+    const HIST_KEY = 'nm-history-v1';
+    function getHist(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY)||'[]'); }catch{return [];} }
+    function setHist(arr){ localStorage.setItem(HIST_KEY, JSON.stringify(arr.slice(0,50))); } // cap 50
+    function addHist(rec){
+      const arr = getHist();
+      arr.unshift({ id: Date.now(), ...rec });
+      setHist(arr);
+      renderHistory();
+    }
+    function renderHistory(){
+      const arr = getHist();
+      if(!arr.length){ historyList.innerHTML = `<div class="hint">No runs yet. Your last 50 runs will appear here.</div>`; return; }
+      historyList.innerHTML = '';
+      arr.forEach((r,idx)=>{
+        const wrap = document.createElement('div');
+        wrap.className = 'rounded-xl border p-3';
+        const when = new Date(r.ts).toLocaleString();
+        const head = `<div class="flex justify-between items-center">
+            <div>
+              <div class="text-sm font-semibold">${r.mode === 'root' ? 'Root Finding' : 'Linear System'} — ${r.methodLabel}</div>
+              <div class="hint">${when}</div>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn btn-soft" data-act="rerun" data-id="${r.id}">Re-run</button>
+            </div>
+          </div>`;
+        const body = document.createElement('div');
+        body.className = 'mt-2 text-sm';
+        body.innerHTML = r.summaryHTML || '';
+        wrap.innerHTML = head;
+        wrap.appendChild(body);
+        historyList.appendChild(wrap);
+      });
+
+      // Hook buttons
+      historyList.querySelectorAll('button[data-act="rerun"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const id = Number(btn.getAttribute('data-id'));
+          const rec = getHist().find(x=>x.id===id);
+          if(!rec) return;
+          if (rec.mode==='root'){
+            setMode('root');
+            methodSelect.value = rec.method;
+            fxInput.value = rec.inputs.fx;
+            gxInput.value = rec.inputs.gx || gxInput.value;
+            aInput.value = rec.inputs.a; bInput.value = rec.inputs.b;
+            x0Input.value = rec.inputs.x0; x1Input.value = rec.inputs.x1;
+            tolInput.value = rec.inputs.tol; kmaxInput.value = rec.inputs.kmax;
+            deltaInput.value = rec.inputs.delta || deltaInput.value;
+            nmaxInput.value = rec.inputs.nmax || nmaxInput.value;
+            syncVisibility();
+            runRoot();
+          } else {
+            setMode('linear');
+            methodSelect.value = rec.method; pivotSelect.value = rec.method;
+            if (rec.inputs.mode === 'paste'){
+              setBuildMode('paste');
+              AInput.value = rec.inputs.Atext;
+              bVecInput.value = rec.inputs.btext;
+            } else {
+              setBuildMode('build');
+              nSizeInput.value = rec.inputs.n;
+              buildGrid();
+              // fill grid
+              const {A,b} = rec.inputs;
+              const rowsA = AGrid.querySelectorAll('tbody tr');
+              rowsA.forEach((tr,i)=> tr.querySelectorAll('input').forEach((inp,j)=> inp.value = (A[i][j] ?? 0)));
+              const rowsB = bGrid.querySelectorAll('tbody tr');
+              rowsB.forEach((tr,i)=> tr.querySelector('input').value = (b[i] ?? 0));
+            }
+            ltolInput.value = rec.inputs.tol;
+            runLinear();
+          }
+          toggleHistory(false);
+        });
+      });
+    }
+
+    function toggleHistory(open){
+      histDrawer.classList.toggle('open', open);
+      histDrawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+    historyBtn.addEventListener('click', ()=>toggleHistory(true));
+    closeHistBtn.addEventListener('click', ()=>toggleHistory(false));
+    clearHistBtn.addEventListener('click', ()=>{ if(confirm('Clear all history?')){ setHist([]); renderHistory(); }});
+    exportHistBtn.addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(getHist(), null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='numerical-lab-history.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    /* ================= Runner ================= */
+    runBtn.addEventListener('click', () => {
+      if (appMode==='root'){ runRoot(); } else { runLinear(); }
+    });
+
+    function runRoot(){
+      clearRootOutputs();
+      let f, g=null; try{ f=buildFn(fxInput.value); }catch(e){ setHTML(alertsBox, alertMsg("Invalid f(x). Please check your expression.", 'error')); return; }
+      const m = methodSelect.value;
+      if (m==='fixedPoint'){ try{ g=buildFn(gxInput.value);}catch(e){ setHTML(alertsBox, alertMsg("Invalid g(x). Please check your expression.", 'error')); return; } }
+      const a=Number(aInput.value), b=Number(bInput.value), x0=Number(x0Input.value), x1=Number(x1Input.value);
+      const tol=Number(tolInput.value), kmax=Number(kmaxInput.value), delta=Number(deltaInput.value), nmax=Number(nmaxInput.value);
+      if(!isFinite(a)||!isFinite(b)||a===b) return setHTML(alertsBox, alertMsg("Interval [a,b] looks off. Try different endpoints.", 'error'));
+      if(!(tol>0)) return setHTML(alertsBox, alertMsg("Tolerance must be positive.", 'error'));
+      if(!(kmax>0)) return setHTML(alertsBox, alertMsg("Max iterations must be positive.", 'error'));
+
+      plotFx(f,a,b,[], 'iter');
+
+      try{
+        let headers=[], rows=[], itXs=[];
+        let summaryHTML='';
+        if (m==='incremental'){
+          const r=incrementalSearch(f,x0,delta,nmax);
+          if(!r.bracket){ appendHTML(alertsBox, alertMsg(r.msg,'warn')); appendHTML(alertsBox, alertMsg("Try expanding the range, changing Δ, or plotting to spot sign changes.", 'ok')); return; }
+          setHTML(summaryBox, `<span class="badge ok">Bracket</span> Use [${round(r.bracket[0])}, ${round(r.bracket[1])}] as your starting interval for Bisection/False Position.`);
+          plotFx(f,a,b,[r.bracket[0], r.bracket[1]], 'bracket');
+          headers=["Note","a","b"]; rows=[["Found", round(r.bracket[0]), round(r.bracket[1])]];
+          summaryHTML = `<div><b>Bracket:</b> [${round(r.bracket[0])}, ${round(r.bracket[1])}]</div>`;
+          addHist({
+            ts: new Date().toISOString(),
+            mode: 'root',
+            method: m,
+            methodLabel: 'Incremental Search',
+            inputs: { fx: fxInput.value, a, b, x0, x1, tol, kmax, delta, nmax },
+            summaryHTML
+          });
+        }
+        else if (m==='bisection'){
+          const r=bisection(f,a,b,tol,kmax);
+          if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Pro tip: run Incremental Search first to locate a valid bracket.", 'ok')); return;}
+          headers=["k","a","b","xm","f(xm)","|dx|","(b-a)/2"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[3])); plotFx(f,a,b,itXs,'xm');
+          summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Bisection', inputs:{ fx:fxInput.value,a,b,tol,kmax }, summaryHTML });
+        }
+        else if (m==='falsePosition'){
+          const r=falsePosition(f,a,b,tol,kmax);
+          if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Try Incremental Search to find a bracket with f(a)*f(b)<0.", 'ok')); return;}
+          headers=["k","a","b","xm","f(xm)","|dx|"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[3])); plotFx(f,a,b,itXs,'xm');
+          summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'False Position', inputs:{ fx:fxInput.value,a,b,tol,kmax }, summaryHTML });
+        }
+        else if (m==='fixedPoint'){
+          const r=fixedPoint(g,a,b,x0,tol,kmax); if(r.warn) appendHTML(alertsBox, alertMsg(r.warn,'warn'));
+          headers=["k","x_k","g(x_k)","|dx|"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Fixed Point</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[2])); plotFx(f,a,b,itXs,'x_k');
+          summaryHTML = `<div><b>x*:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Fixed Point', inputs:{ fx:fxInput.value,gx:gxInput.value,a,b,x0,tol,kmax }, summaryHTML });
+        }
+        else if (m==='newton'){
+          const r=newton(f,x0,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Pick a different x0 or bracket first, then switch back.", 'ok')); return;}
+          headers=["k","x_k","f(x_k)","f'(x_k)","x_{k+1}","|dx|"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[4])); plotFx(f,a,b,itXs,'x_k');
+          summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Newton–Raphson', inputs:{ fx:fxInput.value,x0,tol,kmax }, summaryHTML });
+        }
+        else if (m==='secant'){
+          const r=secant(f,x0,x1,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Restart with different seeds or bracket first.", 'ok')); return;}
+          headers=["k","x_{k-1}","x_k","x_{k+1}","f(x_{k+1})","|dx|"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[3])); plotFx(f,a,b,itXs,'x_k');
+          summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Secant', inputs:{ fx:fxInput.value,x0,x1,tol,kmax }, summaryHTML });
+        }
+        else if (m==='multiple'){
+          const r=modifiedNewton(f,x0,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Try another x0 or approach the root with bracketing.", 'ok')); return;}
+          headers=["k","x_k","f(x)","f'(x)","f''(x)","x_{k+1}","|dx|"]; rows=r.rows;
+          setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
+          itXs=r.rows.map(v=>Number(v[5])); plotFx(f,a,b,itXs,'x_k');
+          summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Modified Newton', inputs:{ fx:fxInput.value,x0,tol,kmax }, summaryHTML });
+        }
+
+        if(headers.length){ renderTable(headers, rows, iterTable); renderLast3(rows, last3Box); }
+      }catch(e){ appendHTML(alertsBox, alertMsg("Computation failed: "+e.message,'error')); }
+    }
+
+    function runLinear(){
+      clearLinearOutputs();
+      const m = methodSelect.value; // gaussNone / gaussPartial / gaussTotal
+      let A, b, tol;
+      try{
+        tol = Number(ltolInput.value); if(!(tol>0)) throw new Error("Tolerance must be positive.");
+        if (buildMode==='paste'){
+          A = parseMatrix(AInput.value); b = parseVector(bVecInput.value); if (b.length!==A.length) throw new Error("Vector b must have length n.");
+        } else {
+          const g = collectGrid(); A=g.A; b=g.b;
+        }
+      }catch(e){ return setHTML(lAlertsBox, alertMsg(e.message,'error')); }
+
+      try{
+        let r=null;
+        if (m==='gaussNone') r=gaussNoPivot(A,b,tol);
+        else if (m==='gaussPartial') r=gaussPartial(A,b,tol);
+        else r=gaussTotal(A,b,tol);
+
+        const headers=["i","x_i"], rows=r.x.map((xi,i)=>[i+1, round(xi,10)]);
+        renderTable(headers, rows, lTable);
+
+        let sum = `<span class="badge ok">Solved</span> with ${m==='gaussNone'?'no pivoting':m==='gaussPartial'?'partial pivoting':'total pivoting'}.`;
+        if (m==='gaussNone') appendHTML(lAlertsBox, alertMsg("Heads-up: without pivoting, small pivots can break stability. Prefer partial/total pivoting when in doubt.", 'warn'));
+        setHTML(lSummaryBox, sum);
+
+        if (r.colPerm){ setHTML(permBox, `<span class="badge ok">Column permutation</span> <span class="code">[${r.colPerm.join(', ')}]</span> — solution is reported in the original variable order.`); }
+        else setHTML(permBox, '');
+
+        // Save to history
+        const summaryHTML = `<div><b>Method:</b> ${m} · <b>x:</b> [${r.x.map(v=>round(v,6)).join(', ')}]</div>`;
+        const recordInputs = (buildMode==='paste')
+          ? { mode:'paste', Atext:AInput.value, btext:bVecInput.value, tol }
+          : { mode:'build', n:A.length, A, b, tol };
+        const label = m==='gaussNone' ? 'Gaussian (No Pivoting)' : m==='gaussPartial' ? 'Gaussian (Partial Pivoting)' : 'Gaussian (Total Pivoting)';
+        addHist({ ts:new Date().toISOString(), mode:'linear', method:m, methodLabel:label, inputs: recordInputs, summaryHTML });
+      } catch(e){
+        setHTML(lAlertsBox, alertMsg("Computation failed: "+e.message,'error'));
+        if (/pivot/i.test(e.message)) appendHTML(lAlertsBox, alertMsg("Try Partial or Total Pivoting; also consider rescaling rows/columns.", 'ok'));
+      }
+    }
+
+    /* Deep link builder */
+    function updateDeepLink(){
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', appMode);
+      url.searchParams.set('method', methodSelect.value);
+      deepLink.href = url.toString();
+      deepLink.textContent = 'Share Link';
+    }
+
+    /* Query params: ?mode=root|linear&method=bisection|gaussPartial... */
+    function applyQueryParams(){
+      const url = new URL(window.location.href);
+      const mode = url.searchParams.get('mode');
+      const method = url.searchParams.get('method');
+      if (mode==='linear' || mode==='root') setMode(mode); else setMode('root');
+      populateMethodsFor(appMode, false);
+      const list = (appMode==='root'? ROOT_METHODS: LINEAR_METHODS).map(m=>m.value);
+      if (method && list.includes(method)) methodSelect.value = method;
+      syncVisibility();
+    }
+
+    /* Init */
+    function init(){
+      // Mode defaults
+      populateMethodsFor('root', false);
+      setMode('root');
+      applyQueryParams();
+      // initial plot
+      try{ plotFx(buildFn(fxInput.value), Number(aInput.value), Number(bInput.value), [], 'iter'); }catch{}
+      // History
+      renderHistory();
+      // Matrix mode
+      setBuildMode('paste');
+      buildBtn.addEventListener('click', buildGrid);
+      clearGridBtn.addEventListener('click', clearGrid);
+      // History toggle
+      historyBtn.addEventListener('click', ()=>toggleHistory(true));
+      closeHistBtn.addEventListener('click', ()=>toggleHistory(false));
+      updateDeepLink();
+    }
+
+    init();
+  </script>
+</body>
+</html>

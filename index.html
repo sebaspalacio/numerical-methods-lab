@@ -48,6 +48,8 @@
     .drawer.open{ transform: translateX(0%); }
     .drawer-header{ display:flex; align-items:center; justify-content:space-between; padding: 1rem 1rem; border-bottom:1px solid #eef2f7;}
     .soft-hr{ height:1px; background:linear-gradient(90deg,transparent,#e5e7eb,transparent); }
+    .chip{ display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .6rem; border-radius:999px; background:#f3f4f6; font-size:.8rem; cursor:pointer; }
+    .chip:hover{ background:#e5e7eb; }
   </style>
 </head>
 <body class="min-h-screen">
@@ -74,7 +76,7 @@
         </div>
         <div>
           <label class="block text-sm font-semibold mb-1">Method</label>
-          <!-- Will be populated by JS based on workspace -->
+          <!-- Populated dynamically -->
           <select id="methodSelect" class="select"></select>
         </div>
         <div class="flex gap-2">
@@ -147,6 +149,8 @@
               <input id="kmaxInput" type="number" class="input" value="100"/>
             </div>
           </div>
+
+          <div id="bracketBox" class="mt-3"></div>
         </div>
 
         <div>
@@ -231,6 +235,14 @@
               </select>
             </div>
           </div>
+
+          <div class="mt-3">
+            <label class="inline-flex items-center gap-2">
+              <input id="scaleRowsChk" type="checkbox" />
+              <span class="text-sm">Scale rows before elimination (divide each row by its max |entry|)</span>
+            </label>
+            <p class="hint mt-1">Row scaling improves stability on ill-conditioned systems. It preserves the exact solution if b is scaled equally.</p>
+          </div>
         </div>
 
         <div>
@@ -297,6 +309,7 @@
     const plotDiv = document.getElementById('plot');
     const iterTable = document.getElementById('iterTable');
     const last3Box = document.getElementById('last3Box');
+    const bracketBox = document.getElementById('bracketBox');
 
     /* Linear refs */
     const linearPanel = document.getElementById('linearPanel');
@@ -308,6 +321,7 @@
     const lSummaryBox = document.getElementById('lSummaryBox');
     const lTable = document.getElementById('lTable');
     const permBox = document.getElementById('permBox');
+    const scaleRowsChk = document.getElementById('scaleRowsChk');
 
     /* Matrix builder refs */
     const modePaste = document.getElementById('modePaste');
@@ -358,9 +372,99 @@
     function buildFn(expr){ const src=normalizeExpr(expr); return new Function('x',`with(Math){return (${src});}`); }
     function d1(phi,x,h=1e-6){ return (phi(x+h)-phi(x-h))/(2*h); }
     function d2(phi,x,h=1e-5){ return (phi(x+h)-2*phi(x)+phi(x-h))/(h*h); }
-    function maxAbsDeriv(phi,a,b,n=60){ let m=0; for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; m=Math.max(m,Math.abs(d1(phi,x))); } return m; }
+    function maxAbsDeriv(phi,a,b,n=60){ let m=0; for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; try{ m=Math.max(m,Math.abs(d1(phi,x))); }catch{} } return m; }
     function linspace(a,b,n){ const xs=[]; for(let i=0;i<n;i++) xs.push(a+(b-a)*i/(n-1)); return xs; }
-    function round(v,d=10){ const f=Number(v); if(!isFinite(f)) return String(v); return Math.abs(f)>=1e-2&&Math.abs(f)<1e6? f.toFixed(d): f.toExponential(3); }
+    function round(v,d=10){ const f=Number(v); if(!isFinite(f)) return String(v); return Math.abs(f)>=1e-2&&Math.abs(f)<1e6? Number(f.toFixed(d)): Number(f.toExponential(6)); }
+
+    /* ===== Safe eval & scans ===== */
+    function tryEval(phi, x) {
+      try {
+        const y = phi(x);
+        return (Number.isFinite(y)) ? { ok: true, y } : { ok: false, y: NaN };
+      } catch {
+        return { ok: false, y: NaN };
+      }
+    }
+
+    // detailed scan: returns invalid ratio and candidate sign-change brackets
+    function scanIntervalDetailed(phi, a, b, samples = 240) {
+      const xs = linspace(a, b, samples);
+      let invalid = 0;
+      const flips = [];
+      let prevSign = null, prevX = xs[0], prevOk = false, prevY = NaN;
+
+      for (const x of xs) {
+        const { ok, y } = tryEval(phi, x);
+        if (!ok) { invalid++; prevSign = null; prevOk = false; prevX = x; continue; }
+
+        const s = Math.sign(y === 0 ? 0 : y);
+        if (prevOk && prevSign !== null) {
+          if (prevSign * s < 0) {
+            flips.push([prevX, x]); // bracket candidate
+          }
+        }
+        prevSign = (s === 0) ? prevSign : s;
+        prevOk = true;
+        prevX = x;
+        prevY = y;
+      }
+
+      const invalidRatio = invalid / xs.length;
+      const signChange = flips.length > 0;
+      return { invalidRatio, signChange, flips, samples: xs.length };
+    }
+
+    function precheckRoot(phi, a, b, methodName) {
+      if (!isFinite(a) || !isFinite(b) || a === b) {
+        return { ok: false, msg: "Interval [a,b] is invalid. Choose different endpoints.", flips: [] };
+      }
+      const s = scanIntervalDetailed(phi, a, b, 240);
+
+      if (s.invalidRatio > 0.25) {
+        return {
+          ok: false,
+          msg: "f(x) is undefined or blows up over much of [a,b]. Plot the function and choose a tighter interval that avoids discontinuities.",
+          flips: s.flips
+        };
+      }
+      if ((methodName === 'bisection' || methodName === 'falsePosition') && !s.signChange) {
+        return {
+          ok: false,
+          msg: "No sign change detected on [a,b]. Use Incremental Search or look at the plot to find a bracket where f(a)*f(b) < 0.",
+          flips: s.flips
+        };
+      }
+      return { ok: true, flips: s.flips };
+    }
+
+    function guardIterate(phi, x, a, b) {
+      if (!isFinite(x) || x < Math.min(a,b) || x > Math.max(a,b)) {
+        return { ok: false, msg: "The iterate left the chosen interval. Try a tighter [a,b] or pick a different seed; check the plot for guidance." };
+      }
+      const { ok } = tryEval(phi, x);
+      if (!ok) {
+        return { ok: false, msg: "The iterate stepped into a region where f(x) is undefined. Tighten [a,b] or adjust your initial guess; use the plot to avoid discontinuities." };
+      }
+      return { ok: true };
+    }
+
+    /* ===== UI helpers ===== */
+    function renderBracketSuggestions(flips) {
+      if (!flips || !flips.length) { setHTML(bracketBox, ''); return; }
+      const top = flips.slice(0, 4); // show up to 4 chips
+      const chips = top.map(([u,v]) => {
+        const lo = Math.min(u,v), hi = Math.max(u,v);
+        return `<span class="chip" data-a="${lo}" data-b="${hi}">Try [${round(lo,6)}, ${round(hi,6)}]</span>`;
+      }).join(' ');
+      setHTML(bracketBox, `<div class="hint"><span class="badge warn">Suggestions</span> ${chips}</div>`);
+      bracketBox.querySelectorAll('.chip').forEach(ch=>{
+        ch.addEventListener('click', ()=>{
+          aInput.value = ch.getAttribute('data-a');
+          bInput.value = ch.getAttribute('data-b');
+          try { plotFx(buildFn(fxInput.value), Number(aInput.value), Number(bInput.value), [], 'iter'); } catch {}
+        });
+      });
+    }
 
     /* ================= Populate methods based on workspace ================= */
     function populateMethodsFor(mode, keepCurrent = true) {
@@ -428,7 +532,7 @@
       }
     });
 
-    function clearRootOutputs(){ setHTML(alertsBox,''); setHTML(summaryBox,''); setHTML(iterTable,''); setHTML(last3Box,''); Plotly.purge(plotDiv); }
+    function clearRootOutputs(){ setHTML(alertsBox,''); setHTML(summaryBox,''); setHTML(iterTable,''); setHTML(last3Box,''); setHTML(bracketBox,''); Plotly.purge(plotDiv); }
     function clearLinearOutputs(){ setHTML(lAlertsBox,''); setHTML(lSummaryBox,''); setHTML(lTable,''); setHTML(permBox,''); }
 
     resetBtn.addEventListener('click', ()=>{
@@ -440,7 +544,7 @@
       } else {
         AInput.value="2 -1 0 3\n1 0.5 3 8\n0 13 -2 11\n14 5 -2 3";
         bVecInput.value="1 1 1 1"; ltolInput.value="1e-12"; pivotSelect.value="gaussNone"; methodSelect.value="gaussNone";
-        clearGrid(); clearLinearOutputs();
+        clearGrid(); clearLinearOutputs(); scaleRowsChk.checked = false;
       }
       updateDeepLink();
     });
@@ -448,9 +552,9 @@
     /* ================= Plot & Tables ================= */
     function plotFx(phi,a,b,iterXs=[],label='iter'){
       try {
-        const xs=linspace(a,b,300), ys=xs.map(x=>{ const y=phi(x); return Number.isFinite(y)?y:NaN; });
+        const xs=linspace(a,b,300), ys=xs.map(x=>{ const r=tryEval(phi,x); return r.ok? r.y : NaN; });
         const trace={x:xs,y:ys,type:'scatter',mode:'lines',name:'f(x)'};
-        const it=iterXs.length?{x:iterXs,y:iterXs.map(phi),mode:'markers+lines',type:'scatter',name:label,marker:{size:8},line:{dash:'dot'}}:null;
+        const it=iterXs.length?{x:iterXs,y:iterXs.map(x=>tryEval(phi,x).ok? tryEval(phi,x).y : NaN),mode:'markers+lines',type:'scatter',name:label,marker:{size:8},line:{dash:'dot'}}:null;
         Plotly.newPlot('plot', it?[trace,it]:[trace], {margin:{l:36,r:12,t:10,b:36},xaxis:{title:'x'},yaxis:{title:'y'}},{displayModeBar:false,responsive:true});
       } catch(e){
         setHTML(alertsBox, alertMsg("Plotting failed. Check f(x) over the interval.", 'warn'));
@@ -502,27 +606,70 @@
     }
     function fixedPoint(psi,a,b,x0,tol,kmax){
       const rows=[]; const kEst=maxAbsDeriv(psi,a,b);
-      let warn = (kEst>=1)? `Estimated max |g'| ≈ ${kEst.toFixed(3)} ≥ 1 on [${a},${b}] — try another g(x) or a tighter interval.`: null;
-      for(let k=1;k<=kmax;k++){ const x1=psi(x0), err=Math.abs(x1-x0); rows.push([k,round(x0),round(x1),round(err,6)]); if(err<=tol) return { rows, root:x1, err, k, warn }; x0=x1; }
+      let warn = (kEst>=1 || !Number.isFinite(kEst))? `Estimated max |g'| ≈ ${Number.isFinite(kEst)? kEst.toFixed(3) : '∞'} ≥ 1 on [${a},${b}] — try another g(x) or a tighter interval.`: null;
+      for(let k=1;k<=kmax;k++){
+        const x1=psi(x0), err=Math.abs(x1-x0);
+        // keep iterates in [a,b]
+        if(!(isFinite(x1) && x1>=Math.min(a,b) && x1<=Math.max(a,b))){
+          return { rows, error:"The iterate left the chosen interval. Try a tighter [a,b] or a different g(x); check the plot for guidance.", warn };
+        }
+        rows.push([k,round(x0),round(x1),round(err,6)]);
+        if(err<=tol) return { rows, root:x1, err, k, warn };
+        x0=x1;
+      }
       return { rows, root:x0, err:rows.at(-1)?.[3], k:kmax, warn };
     }
-    function newton(phi,x0,tol,kmax){
-      const rows=[]; for(let k=1;k<=kmax;k++){ const fp=d1(phi,x0); if(Math.abs(fp)<1e-12) return { rows, error:"Derivative ~ 0; try a different x0 or bracket first." };
-        const x1=x0 - phi(x0)/fp, err=Math.abs(x1-x0); rows.push([k,round(x0),round(phi(x0),6),round(fp,6),round(x1),round(err,6)]);
-        if(err<=tol) return { rows, root:x1, err, k }; x0=x1; }
+    function newton(phi,x0,tol,kmax,a,b){
+      const rows=[];
+      for(let k=1;k<=kmax;k++){
+        const fx = phi(x0);
+        const fp = d1(phi,x0);
+        if(!isFinite(fp) || Math.abs(fp)<1e-14) return { rows, error:"Derivative ~ 0; try a different x0 or bracket first." };
+        let step = -fx/fp;
+        // Damping if derivative tiny or step too wild
+        let alpha = (Math.abs(fp) < 1e-6) ? 0.5 : 1.0;
+        let x1 = x0 + alpha*step;
+        // Keep inside [a,b] by shrinking alpha up to 5 times
+        let tries=0;
+        while(tries<5 && (x1<Math.min(a,b) || x1>Math.max(a,b))){
+          alpha *= 0.5; x1 = x0 + alpha*step; tries++;
+        }
+        const guard = guardIterate(phi, x1, a, b);
+        if(!guard.ok) return { rows, error:guard.msg };
+
+        const err=Math.abs(x1-x0);
+        rows.push([k,round(x0),round(fx,6),round(fp,6),round(x1),round(err,6), (alpha<1?'(damped)':'')]);
+        if(err<=tol) return { rows, root:x1, err, k };
+        x0=x1;
+      }
       return { rows, root:x0, err:rows.at(-1)?.[5], k:kmax };
     }
-    function secant(phi,x0,x1,tol,kmax){
-      const rows=[]; for(let k=1;k<=kmax;k++){ const f0=phi(x0), f1=phi(x1), denom=f1-f0; if(Math.abs(denom)<1e-14) return { rows, error:"Denominator ~ 0; restart with different seeds or bracket first." };
-        const x2=x1 - f1*(x1-x0)/denom, err=Math.abs(x2-x1); rows.push([k,round(x0),round(x1),round(x2),round(phi(x2),6),round(err,6)]);
-        if(err<=tol) return { rows, root:x2, err, k }; x0=x1; x1=x2; }
+    function secant(phi,x0,x1,tol,kmax,a,b){
+      const rows=[];
+      for(let k=1;k<=kmax;k++){
+        const f0=phi(x0), f1=phi(x1), denom=f1-f0; if(Math.abs(denom)<1e-14) return { rows, error:"Denominator ~ 0; restart with different seeds or bracket first." };
+        const x2=x1 - f1*(x1-x0)/denom;
+        const guard = guardIterate(phi, x2, a, b);
+        if(!guard.ok) return { rows, error:guard.msg };
+        const err=Math.abs(x2-x1);
+        rows.push([k,round(x0),round(x1),round(x2),round(phi(x2),6),round(err,6)]);
+        if(err<=tol) return { rows, root:x2, err, k };
+        x0=x1; x1=x2;
+      }
       return { rows, root:x1, err:rows.at(-1)?.[5], k:kmax };
     }
-    function modifiedNewton(phi,x0,tol,kmax){
-      const rows=[]; for(let k=1;k<=kmax;k++){ const fx=phi(x0), fp=d1(phi,x0), fpp=d2(phi,x0), denom=fp*fp - fx*fpp;
-        if(Math.abs(denom)<1e-14) return { rows, error:"Unstable step: denominator ~ 0. Try a different x0 or bracket first." };
-        const x1=x0 - fx*fp/denom, err=Math.abs(x1-x0); rows.push([k,round(x0),round(fx,6),round(fp,6),round(fpp,6),round(x1),round(err,6)]);
-        if(err<=tol) return { rows, root:x1, err, k }; x0=x1; }
+    function modifiedNewton(phi,x0,tol,kmax,a,b){
+      const rows=[];
+      for(let k=1;k<=kmax;k++){
+        const fx=phi(x0), fp=d1(phi,x0), fpp=d2(phi,x0), denom=fp*fp - fx*fpp;
+        if(!isFinite(denom) || Math.abs(denom)<1e-14) return { rows, error:"Unstable step: denominator ~ 0. Try a different x0 or bracket first." };
+        const x1=x0 - fx*fp/denom;
+        const guard = guardIterate(phi, x1, a, b);
+        if(!guard.ok) return { rows, error:guard.msg };
+        const err=Math.abs(x1-x0); rows.push([k,round(x0),round(fx,6),round(fp,6),round(fpp,6),round(x1),round(err,6)]);
+        if(err<=tol) return { rows, root:x1, err, k };
+        x0=x1;
+      }
       return { rows, root:x0, err:rows.at(-1)?.[6], k:kmax };
     }
 
@@ -534,33 +681,81 @@
     function parseVector(text){ return String(text).trim().split(/[,\s]+/).filter(Boolean).map(Number); }
     function backSubstitution(U,b,tol=1e-12){
       const n=U.length, x=Array(n).fill(0);
-      if(Math.abs(U[n-1][n-1])<=tol) throw new Error("Back substitution failed: near-zero pivot at last row.");
+      // Inconsistency check: 0...0 | nonzero
+      for(let i=0;i<n;i++){
+        const allZero = U[i].every(v=>Math.abs(v)<=tol);
+        if (allZero && Math.abs(b[i])>tol) throw new Error(`No solution: row ${i+1} is all zeros but RHS ≠ 0.`);
+      }
+      if(Math.abs(U[n-1][n-1])<=tol) throw new Error("Back substitution failed: near-zero pivot at last row (infinite solutions or singular).");
       x[n-1]=b[n-1]/U[n-1][n-1];
-      for(let i=n-2;i>=0;i--){ let s=0; for(let j=i+1;j<n;j++) s+=U[i][j]*x[j]; if(Math.abs(U[i][i])<=tol) throw new Error(`Back substitution failed at row ${i}: near-zero pivot.`);
+      for(let i=n-2;i>=0;i--){ let s=0; for(let j=i+1;j<n;j++) s+=U[i][j]*x[j]; if(Math.abs(U[i][i])<=tol) throw new Error(`Back substitution failed at row ${i+1}: near-zero pivot (infinite solutions or singular).`);
         x[i]=(b[i]-s)/U[i][i]; }
       return x;
     }
+
+    function matrixDiagnostics(A, b, tol = 1e-12) {
+      const n = A.length;
+      let zeroRows = [], zeroCols = [];
+      for (let i=0;i<n;i++) {
+        const allZero = A[i].every(v => Math.abs(v) <= tol);
+        if (allZero && Math.abs(b[i]) > tol) return { ok:false, fatal:true, msg:`Row ${i+1} is all zeros but b[${i+1}] ≠ 0 → inconsistent system (no solution).` };
+        if (allZero) zeroRows.push(i+1);
+      }
+      for (let j=0;j<n;j++) {
+        let allz = true;
+        for (let i=0;i<n;i++) if (Math.abs(A[i][j]) > tol) { allz=false; break; }
+        if (allz) zeroCols.push(j+1);
+      }
+      const norms = A.map(r => r.reduce((s,v)=>s+Math.abs(v),0));
+      const maxN = Math.max(...norms), minN = Math.max(Math.min(...norms), tol);
+      const spread = maxN / minN;
+      let tinyDiag = false;
+      for (let k=0;k<n;k++) {
+        const colMax = Math.max(...A.map(r => Math.abs(r[k])));
+        if (colMax > 0 && Math.abs(A[k][k]) <= 1e-6 * colMax) tinyDiag = true;
+      }
+      let notes = [];
+      if (zeroRows.length) notes.push(`Zero rows detected at ${zeroRows.join(', ')} (system may be underdetermined).`);
+      if (zeroCols.length) notes.push(`All-zero columns detected at ${zeroCols.join(', ')} (singularity).`);
+      if (spread > 1e8) notes.push(`Row norm spread ≈ ${spread.toExponential(2)} → severe scaling/conditioning issues; consider rescaling rows/columns.`);
+      if (tinyDiag) notes.push(`Very small diagonal vs. column max → use Partial or Total Pivoting.`);
+      if (notes.length) return { ok: true, warn: notes.join(' ') };
+      return { ok: true };
+    }
+
     function gaussNoPivot(Ain, bin, tol=1e-12){
       const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length;
-      for(let k=0;k<n-1;k++){ if(Math.abs(A[k][k])<=tol) throw new Error("Zero/near-zero pivot. Try Partial/Total Pivoting or rescale.");
-        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+      for(let k=0;k<n-1;k++){
+        if(Math.abs(A[k][k])<=tol) throw new Error("Zero/near-zero pivot. Try Partial/Total Pivoting or rescale.");
+        for(let i=k+1;i<n;i++){
+          const m=A[i][k]/A[k][k];
+          for(let j=k;j<n;j++) A[i][j]-=m*A[k][j];
+          b[i]-=m*b[k];
+        }
+      }
       return { x: backSubstitution(A,b,tol) };
     }
     function gaussPartial(Ain,bin,tol=1e-12){
       const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length;
-      for(let k=0;k<n-1;k++){ let p=k, maxv=Math.abs(A[k][k]); for(let i=k+1;i<n;i++){ const v=Math.abs(A[i][k]); if(v>maxv){maxv=v;p=i;} }
+      for(let k=0;k<n-1;k++){
+        let p=k, maxv=Math.abs(A[k][k]);
+        for(let i=k+1;i<n;i++){ const v=Math.abs(A[i][k]); if(v>maxv){maxv=v;p=i;} }
         if(maxv<=tol) throw new Error("All candidate pivots ~ 0. Singular/ill-conditioned.");
         if(p!==k){ const tr=A[k]; A[k]=A[p]; A[p]=tr; const tb=b[k]; b[k]=b[p]; b[p]=tb; }
-        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; }
+      }
       return { x: backSubstitution(A,b,tol) };
     }
     function gaussTotal(Ain,bin,tol=1e-12){
       const A=Ain.map(r=>r.slice()), b=bin.slice(), n=A.length, colPerm=Array.from({length:n},(_,i)=>i);
-      for(let k=0;k<n-1;k++){ let p=k,q=k,maxv=Math.abs(A[k][k]); for(let i=k;i<n;i++) for(let j=k;j<n;j++){ const v=Math.abs(A[i][j]); if(v>maxv){ maxv=v; p=i; q=j; } }
+      for(let k=0;k<n-1;k++){
+        let p=k,q=k,maxv=Math.abs(A[k][k]);
+        for(let i=k;i<n;i++) for(let j=k;j<n;j++){ const v=Math.abs(A[i][j]); if(v>maxv){ maxv=v; p=i; q=j; } }
         if(maxv<=tol) throw new Error("Active submatrix ~ 0. Singular/ill-conditioned.");
         if(p!==k){ const tr=A[k]; A[k]=A[p]; A[p]=tr; const tb=b[k]; b[k]=b[p]; b[p]=tb; }
         if(q!==k){ for(let i=0;i<n;i++){ const t=A[i][k]; A[i][k]=A[i][q]; A[i][q]=t; } const tp=colPerm[k]; colPerm[k]=colPerm[q]; colPerm[q]=tp; }
-        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; } }
+        for(let i=k+1;i<n;i++){ const m=A[i][k]/A[k][k]; for(let j=k;j<n;j++) A[i][j]-=m*A[k][j]; b[i]-=m*b[k]; }
+      }
       const y=backSubstitution(A,b,tol), x=Array(n).fill(0); for(let j=0;j<n;j++) x[colPerm[j]]=y[j];
       return { x, colPerm };
     }
@@ -639,7 +834,7 @@
       const arr = getHist();
       if(!arr.length){ historyList.innerHTML = `<div class="hint">No runs yet. Your last 50 runs will appear here.</div>`; return; }
       historyList.innerHTML = '';
-      arr.forEach((r,idx)=>{
+      arr.forEach((r)=>{
         const wrap = document.createElement('div');
         wrap.className = 'rounded-xl border p-3';
         const when = new Date(r.ts).toLocaleString();
@@ -660,7 +855,6 @@
         historyList.appendChild(wrap);
       });
 
-      // Hook buttons
       historyList.querySelectorAll('button[data-act="rerun"]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const id = Number(btn.getAttribute('data-id'));
@@ -672,10 +866,11 @@
             fxInput.value = rec.inputs.fx;
             gxInput.value = rec.inputs.gx || gxInput.value;
             aInput.value = rec.inputs.a; bInput.value = rec.inputs.b;
-            x0Input.value = rec.inputs.x0; x1Input.value = rec.inputs.x1;
-            tolInput.value = rec.inputs.tol; kmaxInput.value = rec.inputs.kmax;
-            deltaInput.value = rec.inputs.delta || deltaInput.value;
-            nmaxInput.value = rec.inputs.nmax || nmaxInput.value;
+            x0Input.value = rec.inputs.x0 ?? x0Input.value;
+            x1Input.value = rec.inputs.x1 ?? x1Input.value;
+            tolInput.value = rec.inputs.tol; kmaxInput.value = rec.inputs.kmax ?? kmaxInput.value;
+            deltaInput.value = rec.inputs.delta ?? deltaInput.value;
+            nmaxInput.value = rec.inputs.nmax ?? nmaxInput.value;
             syncVisibility();
             runRoot();
           } else {
@@ -689,7 +884,6 @@
               setBuildMode('build');
               nSizeInput.value = rec.inputs.n;
               buildGrid();
-              // fill grid
               const {A,b} = rec.inputs;
               const rowsA = AGrid.querySelectorAll('tbody tr');
               rowsA.forEach((tr,i)=> tr.querySelectorAll('input').forEach((inp,j)=> inp.value = (A[i][j] ?? 0)));
@@ -697,6 +891,7 @@
               rowsB.forEach((tr,i)=> tr.querySelector('input').value = (b[i] ?? 0));
             }
             ltolInput.value = rec.inputs.tol;
+            scaleRowsChk.checked = !!rec.inputs.scaleRows;
             runLinear();
           }
           toggleHistory(false);
@@ -725,35 +920,42 @@
 
     function runRoot(){
       clearRootOutputs();
-      let f, g=null; try{ f=buildFn(fxInput.value); }catch(e){ setHTML(alertsBox, alertMsg("Invalid f(x). Please check your expression.", 'error')); return; }
+      let f, g=null;
+      try{ f=buildFn(fxInput.value); }catch(e){ setHTML(alertsBox, alertMsg("Invalid f(x). Please check your expression.", 'error')); return; }
       const m = methodSelect.value;
       if (m==='fixedPoint'){ try{ g=buildFn(gxInput.value);}catch(e){ setHTML(alertsBox, alertMsg("Invalid g(x). Please check your expression.", 'error')); return; } }
       const a=Number(aInput.value), b=Number(bInput.value), x0=Number(x0Input.value), x1=Number(x1Input.value);
       const tol=Number(tolInput.value), kmax=Number(kmaxInput.value), delta=Number(deltaInput.value), nmax=Number(nmaxInput.value);
-      if(!isFinite(a)||!isFinite(b)||a===b) return setHTML(alertsBox, alertMsg("Interval [a,b] looks off. Try different endpoints.", 'error'));
       if(!(tol>0)) return setHTML(alertsBox, alertMsg("Tolerance must be positive.", 'error'));
       if(!(kmax>0)) return setHTML(alertsBox, alertMsg("Max iterations must be positive.", 'error'));
 
+      // Precheck & suggestions
+      const chk = precheckRoot(f, a, b, m);
+      if (!chk.ok) {
+        appendHTML(alertsBox, alertMsg(chk.msg, 'warn'));
+        try { plotFx(f,a,b,[], 'iter'); } catch {}
+        renderBracketSuggestions(chk.flips);
+        return;
+      }
+      renderBracketSuggestions(chk.flips);
+
+      // Show plot up front
       plotFx(f,a,b,[], 'iter');
 
       try{
-        let headers=[], rows=[], itXs=[];
-        let summaryHTML='';
+        let headers=[], rows=[], itXs=[], summaryHTML='';
         if (m==='incremental'){
           const r=incrementalSearch(f,x0,delta,nmax);
-          if(!r.bracket){ appendHTML(alertsBox, alertMsg(r.msg,'warn')); appendHTML(alertsBox, alertMsg("Try expanding the range, changing Δ, or plotting to spot sign changes.", 'ok')); return; }
+          if(!r.bracket){
+            appendHTML(alertsBox, alertMsg(r.msg,'warn'));
+            appendHTML(alertsBox, alertMsg("Try expanding the range, changing Δ, or plotting to spot sign changes.", 'ok'));
+            return;
+          }
           setHTML(summaryBox, `<span class="badge ok">Bracket</span> Use [${round(r.bracket[0])}, ${round(r.bracket[1])}] as your starting interval for Bisection/False Position.`);
           plotFx(f,a,b,[r.bracket[0], r.bracket[1]], 'bracket');
           headers=["Note","a","b"]; rows=[["Found", round(r.bracket[0]), round(r.bracket[1])]];
           summaryHTML = `<div><b>Bracket:</b> [${round(r.bracket[0])}, ${round(r.bracket[1])}]</div>`;
-          addHist({
-            ts: new Date().toISOString(),
-            mode: 'root',
-            method: m,
-            methodLabel: 'Incremental Search',
-            inputs: { fx: fxInput.value, a, b, x0, x1, tol, kmax, delta, nmax },
-            summaryHTML
-          });
+          addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Incremental Search', inputs:{ fx:fxInput.value, a,b,x0,x1,tol,kmax,delta,nmax }, summaryHTML });
         }
         else if (m==='bisection'){
           const r=bisection(f,a,b,tol,kmax);
@@ -775,6 +977,7 @@
         }
         else if (m==='fixedPoint'){
           const r=fixedPoint(g,a,b,x0,tol,kmax); if(r.warn) appendHTML(alertsBox, alertMsg(r.warn,'warn'));
+          if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); return; }
           headers=["k","x_k","g(x_k)","|dx|"]; rows=r.rows;
           setHTML(summaryBox, `<span class="badge ok">Fixed Point</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
           itXs=r.rows.map(v=>Number(v[2])); plotFx(f,a,b,itXs,'x_k');
@@ -782,15 +985,15 @@
           addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Fixed Point', inputs:{ fx:fxInput.value,gx:gxInput.value,a,b,x0,tol,kmax }, summaryHTML });
         }
         else if (m==='newton'){
-          const r=newton(f,x0,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Pick a different x0 or bracket first, then switch back.", 'ok')); return;}
-          headers=["k","x_k","f(x_k)","f'(x_k)","x_{k+1}","|dx|"]; rows=r.rows;
+          const r=newton(f,x0,tol,kmax,a,b); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); return;}
+          headers=["k","x_k","f(x_k)","f'(x_k)","x_{k+1}","|dx|","note"]; rows=r.rows;
           setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
           itXs=r.rows.map(v=>Number(v[4])); plotFx(f,a,b,itXs,'x_k');
           summaryHTML = `<div><b>Root:</b> ${round(r.root)} · <b>iters:</b> ${r.k}</div>`;
           addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Newton–Raphson', inputs:{ fx:fxInput.value,x0,tol,kmax }, summaryHTML });
         }
         else if (m==='secant'){
-          const r=secant(f,x0,x1,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Restart with different seeds or bracket first.", 'ok')); return;}
+          const r=secant(f,x0,x1,tol,kmax,a,b); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); return;}
           headers=["k","x_{k-1}","x_k","x_{k+1}","f(x_{k+1})","|dx|"]; rows=r.rows;
           setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
           itXs=r.rows.map(v=>Number(v[3])); plotFx(f,a,b,itXs,'x_k');
@@ -798,7 +1001,7 @@
           addHist({ ts:new Date().toISOString(), mode:'root', method:m, methodLabel:'Secant', inputs:{ fx:fxInput.value,x0,x1,tol,kmax }, summaryHTML });
         }
         else if (m==='multiple'){
-          const r=modifiedNewton(f,x0,tol,kmax); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); appendHTML(alertsBox, alertMsg("Try another x0 or approach the root with bracketing.", 'ok')); return;}
+          const r=modifiedNewton(f,x0,tol,kmax,a,b); if(r.error){ appendHTML(alertsBox, alertMsg(r.error,'warn')); return;}
           headers=["k","x_k","f(x)","f'(x)","f''(x)","x_{k+1}","|dx|"]; rows=r.rows;
           setHTML(summaryBox, `<span class="badge ok">Root</span> x* ≈ <span class="code">${round(r.root)}</span> · <span class="badge ok">iterations: ${r.k}</span>`);
           itXs=r.rows.map(v=>Number(v[5])); plotFx(f,a,b,itXs,'x_k');
@@ -808,6 +1011,18 @@
 
         if(headers.length){ renderTable(headers, rows, iterTable); renderLast3(rows, last3Box); }
       }catch(e){ appendHTML(alertsBox, alertMsg("Computation failed: "+e.message,'error')); }
+    }
+
+    function scaleRowsInPlace(A, b){
+      for(let i=0;i<A.length;i++){
+        const row = A[i];
+        const maxAbs = Math.max(...row.map(v=>Math.abs(v)), 1);
+        const s = maxAbs === 0 ? 1 : maxAbs;
+        if (s !== 0){
+          for(let j=0;j<row.length;j++) row[j] = row[j] / s;
+          b[i] = b[i] / s;
+        }
+      }
     }
 
     function runLinear(){
@@ -822,6 +1037,19 @@
           const g = collectGrid(); A=g.A; b=g.b;
         }
       }catch(e){ return setHTML(lAlertsBox, alertMsg(e.message,'error')); }
+
+      // Optional row scaling
+      if (scaleRowsChk.checked){
+        scaleRowsInPlace(A,b);
+        appendHTML(lAlertsBox, alertMsg("Row scaling applied (each row divided by its max |entry|).", 'ok'));
+      }
+
+      // Diagnostics
+      const diag = matrixDiagnostics(A, b, tol);
+      if (!diag.ok && diag.fatal) {
+        return setHTML(lAlertsBox, alertMsg(diag.msg, 'error'));
+      }
+      if (diag.warn) appendHTML(lAlertsBox, alertMsg(diag.warn, 'warn'));
 
       try{
         let r=null;
@@ -839,11 +1067,10 @@
         if (r.colPerm){ setHTML(permBox, `<span class="badge ok">Column permutation</span> <span class="code">[${r.colPerm.join(', ')}]</span> — solution is reported in the original variable order.`); }
         else setHTML(permBox, '');
 
-        // Save to history
         const summaryHTML = `<div><b>Method:</b> ${m} · <b>x:</b> [${r.x.map(v=>round(v,6)).join(', ')}]</div>`;
         const recordInputs = (buildMode==='paste')
-          ? { mode:'paste', Atext:AInput.value, btext:bVecInput.value, tol }
-          : { mode:'build', n:A.length, A, b, tol };
+          ? { mode:'paste', Atext:AInput.value, btext:bVecInput.value, tol, scaleRows: scaleRowsChk.checked }
+          : { mode:'build', n:A.length, A, b, tol, scaleRows: scaleRowsChk.checked };
         const label = m==='gaussNone' ? 'Gaussian (No Pivoting)' : m==='gaussPartial' ? 'Gaussian (Partial Pivoting)' : 'Gaussian (Total Pivoting)';
         addHist({ ts:new Date().toISOString(), mode:'linear', method:m, methodLabel:label, inputs: recordInputs, summaryHTML });
       } catch(e){
@@ -874,8 +1101,7 @@
     }
 
     /* Init */
-    function init(){
-      // Mode defaults
+    function populateAndInit(){
       populateMethodsFor('root', false);
       setMode('root');
       applyQueryParams();
@@ -893,7 +1119,7 @@
       updateDeepLink();
     }
 
-    init();
+    populateAndInit();
   </script>
 </body>
 </html>

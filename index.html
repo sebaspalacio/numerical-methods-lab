@@ -53,6 +53,10 @@
     .msg p{ margin:.1rem 0; }
 
     .soft-hr{ height:1px; background:linear-gradient(90deg,transparent,#e5e7eb,transparent); }
+      /* History drawer */
+    .drawer{ position: fixed; top:0; right:-420px; width:420px; max-width:90vw; height:100vh; background: var(--c-card); border-left:1px solid #e5e7eb; box-shadow:-20px 0 40px rgba(24,33,47,.08); transition:right .25s ease; z-index:50; }
+    .drawer.open{ right:0; }
+    .drawer-header{ display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding: .6rem .8rem; border-bottom:1px solid #e5e7eb; position: sticky; top:0; background:linear-gradient(180deg,#fff, #fff0); }
   </style>
 </head>
 <body class="min-h-screen">
@@ -433,13 +437,13 @@
         ]
       },
       multiple: {
-        title: 'Modified Newton (Multiple Roots) — Preconditions & Tips',
-        body: [
-          'Need f, f\', and f\''.replace("'","\'"),' (analytic preferred).',
-          'Denominator (f\')^2 − f·f\'' must not be ~0.'
-        ]
-      },
-      gaussNone: {
+      title: 'Modified Newton (Multiple Roots) — Preconditions & Tips',
+      body: [
+        "Need f, f', and f'' (analytic preferred).",
+        "Denominator (f')^2 − f·f'' must not be ~0."
+      ]
+    },
+    gaussNone: {
         title: 'Gaussian Elimination (No Pivoting) — Notes',
         body: [
           'Input a square A and matching b. Small or zero pivots can break stability.',
@@ -899,7 +903,7 @@
               const rowsB = bGrid.querySelectorAll('tbody tr');
               rowsB.forEach((tr,i)=> tr.querySelector('input').value = (b[i] ?? 0));
             }
-            ltolInput.value = rec.inputs.tol; showStepsChk.checked = !!rec.inputs.showSteps;
+            ltolInput.value = rec.inputs.tol; 
             runLinear();
           }
           toggleHistory(false);

@@ -8,11 +8,13 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root{
+    /* Keep existing theme tokens so your CSS file (if any) continues to work */
     --ok:#16a34a;      /* success */
     --warn:#f59e0b;    /* recommendation */
     --err:#dc2626;     /* error */
     --ink:#0f172a;     /* text */
   }
+  body{background:#fafafa;color:#0f172a}
   .badge{display:inline-flex;align-items:center;gap:.5rem;padding:.25rem .6rem;border-radius:.6rem;font-weight:600}
   .badge-ok{background:color-mix(in srgb,var(--ok) 18%, white); color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 40%, white)}
   .badge-warn{background:color-mix(in srgb,var(--warn) 18%, white); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 40%, white)}
@@ -26,15 +28,16 @@
   .btn-primary{background:#111827;color:#fff}
   .btn-primary:disabled{opacity:.5}
   .note{font-size:.9rem;color:#334155}
-  .hidden{display:none}
-  .w-ch{font-variant-numeric:tabular-nums}
   .card{background:white;border:1px solid #e5e7eb;border-radius:1rem;padding:1rem}
+  .w-ch{font-variant-numeric:tabular-nums}
+  /* Fix: ensure nothing overlays controls */
+  #plot, #plot *{pointer-events:auto}
 </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
 <header class="mx-auto max-w-6xl px-4 py-6">
   <h1 class="text-3xl font-bold">Numerical Methods Lab</h1>
-  <p class="text-slate-600">Course-aligned toolbox • roots, linear systems, and interpolation</p>
+  <p class="text-slate-600">Course‑aligned toolbox • roots, linear systems, and interpolation</p>
 </header>
 
 <main class="mx-auto max-w-6xl px-4 pb-24">
@@ -67,8 +70,8 @@
     <div id="inputs" class="mt-4 grid-2"></div>
 
     <div class="mt-4 flex items-center gap-3">
-      <button id="runBtn" class="btn btn-primary">Run</button>
-      <button id="clearBtn" class="btn" onclick="UI.clearAll()">Clear</button>
+      <button id="runBtn" class="btn btn-primary" type="button">Run</button>
+      <button id="clearBtn" class="btn" type="button">Clear</button>
       <label class="text-sm flex items-center gap-2">
         <input id="compareRef" type="checkbox" />
         <span>Compare vs reference direct solver</span>
@@ -101,7 +104,7 @@
   <section class="card mt-6">
     <div class="flex items-center justify-between">
       <h3 class="text-lg font-semibold">History (recent runs)</h3>
-      <button class="btn" onclick="History.clear()">Clear history</button>
+      <button class="btn" type="button" id="clearHistory">Clear history</button>
     </div>
     <div id="history" class="mt-3"></div>
   </section>
@@ -114,8 +117,22 @@
 </main>
 
 <script>
+/* --- Defensive: avoid click issues if script loads before DOM --- */
+(function(){
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+  function boot(){
+    // Wire buttons here to ensure they exist
+    document.getElementById('clearBtn').addEventListener('click', ()=>UI.clearAll());
+    document.getElementById('runBtn').addEventListener('click', ()=>UI.run());
+    document.getElementById('clearHistory').addEventListener('click', ()=>History.clear());
+    UI.init();
+  }
+})();
+
 /* =============================== Utilities =============================== */
-const fmt = (x, k=6) => (Number.isFinite(x)? x.toFixed(k) : String(x));
+const fmt = (x, k=6) => (Number.isFinite(x)? Number(x).toFixed(k) : String(x));
 const deepCopy = o => JSON.parse(JSON.stringify(o));
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 
@@ -126,23 +143,22 @@ function fixedWidthMatrix(M, k=6){
 }
 
 function parseNum(id){
-  const raw = document.getElementById(id).value.trim().replace(/,/g,'');
+  const el=document.getElementById(id); if(!el) throw Error(`Missing input: ${id}`);
+  const raw = el.value.trim().replace(/,/g,'');
   if(!/^[-+]?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i.test(raw)) throw Error(`Invalid number in ${id}`);
   return Number(raw);
 }
 function parseFun(id){
   const src = document.getElementById(id).value.trim();
   if(!/^[\d\s\w\+\-\*\/\^\.\(\),x]*$/.test(src)) throw Error("Function contains invalid characters");
-  // very small sanitizer, user accepts responsibility via ack check
   const f = new Function('x', `with(Math){ return ${src.replaceAll('^','**')} }`);
-  // smoke test
   try{ void f(0); }catch(e){ throw Error("Function is not valid"); }
   return {src, f};
 }
 function parseVec(id){
   const raw = document.getElementById(id).value.trim();
   if(!raw) throw Error("Vector is empty");
-  const arr = raw.split(/[,\s]+/).filter(Boolean).map(Number);
+  const arr = raw.split(/[ ,\t\n]+/).filter(Boolean).map(Number);
   if(arr.some(v=>!Number.isFinite(v))) throw Error("Vector has invalid entries");
   return arr;
 }
@@ -150,7 +166,7 @@ function parseMat(id){
   const raw = document.getElementById(id).value.trim();
   if(!raw) throw Error("Matrix is empty");
   const rows = raw.split(/\n|;/).map(r=>r.trim()).filter(Boolean);
-  const M = rows.map(r=>r.split(/[,\s]+/).filter(Boolean).map(Number));
+  const M = rows.map(r=>r.split(/[ ,\t]+/).filter(Boolean).map(Number));
   const m = M[0].length;
   if(M.some(r=>r.length!==m)) throw Error("Matrix must be rectangular");
   if(M.flat().some(v=>!Number.isFinite(v))) throw Error("Matrix has invalid entries");
@@ -221,349 +237,143 @@ function solveRef(A,b){
 }
 
 /* =============================== Methods =============================== */
-/* ---------- Root finding (course style) ---------- */
-// Bisection: en el curso exigen a > b (observación del profe)
+/* ---------- Root finding ---------- */
+class Recommendation extends Error{}
+
 function bisection(f,a,b,tol,maxIt){
-  if(!(a>b)) throw Error("In Bisection the left limit must be greater than the right limit: require a > b");
-  if(f(a)*f(b)>=0) throw Recommendation("No sign change on [a,b]. Try another interval where f changes sign.");
-  const iters=[];
-  let fa=f(a), fb=f(b), mid, fm;
+  // Per prof request: a must be greater than b
+  if(!(a>b)) throw Error("In Bisection the left limit must be greater than the right limit (require a > b)");
+  if(f(a)*f(b)>=0) throw Recommendation("No sign change on [a,b]. Inspect plot and choose an interval where f crosses x-axis.");
+  const iters=[]; let fa=f(a), fb=f(b), mid, fm;
   for(let k=1;k<=maxIt;k++){
     mid=(a+b)/2; fm=f(mid);
     iters.push([k,a,b,mid,fa,fb,fm,Math.abs(b-a)]);
     if(Math.abs(fm)<=tol || Math.abs(b-a)<=tol) break;
-    // choose subinterval with opposite sign (keeping a>b convention)
-    if(fa*fm<0){ b=mid; fb=fm; }
-    else{ a=mid; fa=fm; }
+    if(fa*fm<0){ b=mid; fb=fm; } else { a=mid; fa=fm; }
   }
   return {root:mid, iters};
 }
 function newtonRoot(f, x0, tol, maxIt){
-  const iters=[];
-  const der = x=> (f(x+1e-6)-f(x-1e-6))/(2e-6);
+  const iters=[]; const der = x=> (f(x+1e-6)-f(x-1e-6))/(2e-6);
   let x=x0, fx=f(x);
   for(let k=1;k<=maxIt;k++){
     const d=der(x);
-    if(Math.abs(d)<1e-14) throw Recommendation("Derivative near zero around current iterate. Try another initial guess or inspect the graph.");
-    const x1=x - fx/d;
-    iters.push([k,x,fx,d,x1,Math.abs(x1-x)]);
+    if(Math.abs(d)<1e-14) throw Recommendation("Derivative near zero around current iterate. Try another initial guess.");
+    const x1=x - fx/d; iters.push([k,x,fx,d,x1,Math.abs(x1-x)]);
     if(Math.abs(x1-x)<=tol) {x=x1; fx=f(x); break;}
     x=x1; fx=f(x);
   }
   return {root:x, iters};
 }
 
-/* ---------- Linear systems (course LU/iterative) ---------- */
+/* ---------- Linear systems ---------- */
 function luSimple(A){
   const n=A.length, L=eye(n), U=zeros(n,n), M=copy(A);
   for(let i=0;i<n-1;i++){
     for(let j=i+1;j<n;j++){
-      if(M[j][i]!==0){
-        const m=M[j][i]/M[i][i]; L[j][i]=m;
-        for(let k=i;k<n;k++) M[j][k]-=m*M[i][k];
-      }
+      if(M[j][i]!==0){ const m=M[j][i]/M[i][i]; L[j][i]=m; for(let k=i;k<n;k++) M[j][k]-=m*M[i][k]; }
     }
     for(let k=i;k<n;k++) U[i][k]=M[i][k];
   }
-  U[n-1][n-1]=M[n-1][n-1];
-  return {L,U};
+  U[n-1][n-1]=M[n-1][n-1]; return {L,U};
 }
 function luPartialPivot(A){
   const n=A.length, L=eye(n), U=zeros(n,n), P=eye(n), M=copy(A);
   for(let i=0;i<n-1;i++){
     let piv=i, mv=Math.abs(M[i][i]);
     for(let r=i+1;r<n;r++) if(Math.abs(M[r][i])>mv){mv=Math.abs(M[r][i]);piv=r;}
-    if(piv!==i){
-      [M[i],M[piv]]=[M[piv],M[i]];
-      [P[i],P[piv]]=[P[piv],P[i]];
-      for(let k=0;k<i;k++) [L[i][k],L[piv][k]]=[L[piv][k],L[i][k]];
-    }
-    for(let j=i+1;j<n;j++){
-      if(M[j][i]!==0){
-        const m=M[j][i]/M[i][i]; L[j][i]=m;
-        for(let k=i;k<n;k++) M[j][k]-=m*M[i][k];
-      }
-    }
+    if(piv!==i){ [M[i],M[piv]]=[M[piv],M[i]]; [P[i],P[piv]]=[P[piv],P[i]]; for(let k=0;k<i;k++) [L[i][k],L[piv][k]]=[L[piv][k],L[i][k]]; }
+    for(let j=i+1;j<n;j++) if(M[j][i]!==0){ const m=M[j][i]/M[i][i]; L[j][i]=m; for(let k=i;k<n;k++) M[j][k]-=m*M[i][k]; }
     for(let k=i;k<n;k++) U[i][k]=M[i][k];
   }
-  U[n-1][n-1]=M[n-1][n-1];
-  return {L,U,P};
+  U[n-1][n-1]=M[n-1][n-1]; return {L,U,P};
 }
 function crout(A){
   const n=A.length, L=zeros(n,n), U=eye(n);
   for(let i=0;i<n;i++){
-    for(let j=i;j<n;j++){
-      let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i];
-      L[j][i]=A[j][i]-s;
-    }
-    for(let j=i+1;j<n;j++){
-      let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j];
-      if(Math.abs(L[i][i])<1e-14) throw Error("Zero on diagonal in Crout (L(i,i)=0)");
-      U[i][j]=(A[i][j]-s)/L[i][i];
-    }
+    for(let j=i;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i]; L[j][i]=A[j][i]-s; }
+    for(let j=i+1;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j]; if(Math.abs(L[i][i])<1e-14) throw Error("Zero on diagonal in Crout"); U[i][j]=(A[i][j]-s)/L[i][i]; }
   }
   return {L,U};
 }
 function doolittle(A){
   const n=A.length, L=eye(n), U=zeros(n,n);
   for(let i=0;i<n;i++){
-    for(let j=i;j<n;j++){
-      let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j];
-      U[i][j]=A[i][j]-s;
-    }
-    for(let j=i+1;j<n;j++){
-      let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i];
-      if(Math.abs(U[i][i])<1e-14) throw Error("Zero on diagonal in Doolittle (U(i,i)=0)");
-      L[j][i]=(A[j][i]-s)/U[i][i];
-    }
+    for(let j=i;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j]; U[i][j]=A[i][j]-s; }
+    for(let j=i+1;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i]; if(Math.abs(U[i][i])<1e-14) throw Error("Zero on diagonal in Doolittle"); L[j][i]=(A[j][i]-s)/U[i][i]; }
   }
   return {L,U};
 }
-// Cholesky (versión de clase). Si aparece negativo en raíz -> error explicativo.
 function choleskyCourse(A){
   const n=A.length, L=zeros(n,n), U=zeros(n,n);
   if(Math.abs(A[0][0])<1e-14) throw Error("a_11 = 0; cannot start Cholesky on this matrix.");
   for(let i=0;i<n;i++){
-    // L(i,i)
     let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][i];
-    const diag=A[i][i]-s;
-    if(diag<=0) throw Recommendation("Non-positive pivot in Cholesky (A not SPD under course variant). Choose another A or reorder.");
+    const diag=A[i][i]-s; if(diag<=0) throw Recommendation("Non‑positive pivot in Cholesky (A not SPD under course variant). Choose another A or reorder.");
     L[i][i]=Math.sqrt(diag); U[i][i]=L[i][i];
-    // L(j,i)
-    for(let j=i+1;j<n;j++){
-      let s2=0; for(let k=0;k<i;k++) s2+=L[j][k]*U[k][i];
-      L[j][i]=(A[j][i]-s2)/U[i][i];
-    }
-    // U(i,j)
-    for(let j=i+1;j<n;j++){
-      let s3=0; for(let k=0;k<i;k++) s3+=L[i][k]*U[k][j];
-      U[i][j]=(A[i][j]-s3)/L[i][i];
-    }
+    for(let j=i+1;j<n;j++){ let s2=0; for(let k=0;k<i;k++) s2+=L[j][k]*U[k][i]; L[j][i]=(A[j][i]-s2)/U[i][i]; }
+    for(let j=i+1;j<n;j++){ let s3=0; for(let k=0;k<i;k++) s3+=L[i][k]*U[k][j]; U[i][j]=(A[i][j]-s3)/L[i][i]; }
   }
   return {L,U};
 }
 
-/* Iterative */
 function jacobi(A,b,x0,tol,Nmax){
-  const n=A.length;
-  for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Jacobi: zero on diagonal; method not defined.");
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Jacobi: zero on diagonal");
   const D = eye(n).map((r,i)=>r.map((_,j)=> i===j?A[i][i]:0));
   const L = zeros(n,n), U = zeros(n,n);
-  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
-    if(i>j) L[i][j]=-A[i][j];
-    else if(i<j) U[i][j]=-A[i][j];
-  }
-  // T = D^{-1}(L+U), C = D^{-1} b
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
   const Di = eye(n).map((r,i)=>r.map((_,j)=> i===j?1/D[i][i]:0));
-  const T = matMul(Di, (function(){const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++)S[i][j]=L[i][j]+U[i][j]; return S;})());
-  const C = matVec(Di,b);
-  const rho = spectralRadius(T);
-  const iters = [];
-  let x = x0.slice(), E=Infinity, k=0;
-  while(E>tol && k<Nmax){
-    const x1 = vecSub(matVec(T,x).map((v,i)=>v + C[i]), Array(n).fill(0)); // x1 = T x + C
-    E = norm2(vecSub(x1,x));
-    iters.push([k+1,E,...x1]);
-    x = x1; k++;
-  }
+  const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++)S[i][j]=L[i][j]+U[i][j];
+  const T = matMul(Di,S), C = matVec(Di,b); const rho = spectralRadius(T);
+  const iters=[]; let x=x0.slice(), E=Infinity, k=0;
+  while(E>tol && k<Nmax){ const x1 = matVec(T,x).map((v,i)=>v + C[i]); E = norm2(vecSub(x1,x)); iters.push([k+1,E,...x1]); x = x1; k++; }
   return {x, iters, T, C, rho};
 }
 function gaussSeidel(A,b,x0,tol,Nmax){
-  const n=A.length;
-  for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Gauss-Seidel: zero on diagonal; method not defined.");
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Gauss‑Seidel: zero on diagonal");
   const D = eye(n).map((r,i)=>r.map((_,j)=> i===j?A[i][i]:0));
   const L = zeros(n,n), U = zeros(n,n);
-  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
-    if(i>j) L[i][j]=-A[i][j];
-    else if(i<j) U[i][j]=-A[i][j];
-  }
-  // T = (D-L)^{-1} U, C = (D-L)^{-1} b
-  // Build (D-L)
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
   const DL = zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) DL[i][j] = (i===j?D[i][i]:0) - L[i][j];
-  const // naive inverse by Gauss-Jordan for small n
-    inv = (M)=>{const n=M.length; const A=copy(M); const I=eye(n);
-      for(let i=0;i<n;i++){
-        // pivot
-        let piv=i; let mv=Math.abs(A[i][i]);
-        for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>mv){mv=Math.abs(A[r][i]);piv=r;}
-        if(piv!==i){ [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]]; }
-        const d=A[i][i]; if(Math.abs(d)<1e-14) throw Error("Singular matrix");
-        for(let j=0;j<n;j++){ A[i][j]/=d; I[i][j]/=d; }
-        for(let r=0;r<n;r++) if(r!==i){
-          const m=A[r][i];
-          for(let j=0;j<n;j++){ A[r][j]-=m*A[i][j]; I[r][j]-=m*I[i][j]; }
-        }
-      } return I;
-    };
-  const DLinv = inv(DL);
-  const T = matMul(DLinv, U);
-  const C = matVec(DLinv, b);
-  const rho = spectralRadius(T);
-  const iters=[]; let x=x0.slice(), E=Infinity, k=0;
-  while(E>tol && k<Nmax){
-    const x1 = matVec(T,x).map((v,i)=>v + C[i]);
-    E=norm2(vecSub(x1,x)); iters.push([k+1,E,...x1]); x=x1; k++;
-  }
+  const inv = (M)=>{const n=M.length; const A=copy(M); const I=eye(n);
+    for(let i=0;i<n;i++){ let piv=i; let mv=Math.abs(A[i][i]); for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>mv){mv=Math.abs(A[r][i]);piv=r;} if(piv!==i){ [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]]; }
+      const d=A[i][i]; if(Math.abs(d)<1e-14) throw Error("Singular matrix");
+      for(let j=0;j<n;j++){ A[i][j]/=d; I[i][j]/=d; }
+      for(let r=0;r<n;r++) if(r!==i){ const m=A[r][i]; for(let j=0;j<n;j++){ A[r][j]-=m*A[i][j]; I[r][j]-=m*I[i][j]; } }
+    } return I; };
+  const DLinv = inv(DL); const T = matMul(DLinv, U); const C = matVec(DLinv, b); const rho = spectralRadius(T);
+  const iters=[]; let x=x0.slice(), E=Infinity, k=0; while(E>tol && k<Nmax){ const x1 = matVec(T,x).map((v,i)=>v + C[i]); E=norm2(vecSub(x1,x)); iters.push([k+1,E,...x1]); x=x1; k++; }
   return {x,iters,T,C,rho};
 }
 function sor(A,b,x0,w,tol,Nmax){
-  if(!(w>0 && w<2)) throw Recommendation("SOR requires 0 < w < 2 for convergence in many cases.");
-  const n=A.length;
-  for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("SOR: zero on diagonal; method not defined.");
+  if(!(w>0 && w<2)) throw Recommendation("SOR requires 0<w<2");
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("SOR: zero on diagonal");
   const D = eye(n).map((r,i)=>r.map((_,j)=> i===j?A[i][i]:0));
   const L = zeros(n,n), U = zeros(n,n);
-  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
-    if(i>j) L[i][j]=-A[i][j];
-    else if(i<j) U[i][j]=-A[i][j];
-  }
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
   const DL = zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) DL[i][j] = (i===j?D[i][i]:0) - w*L[i][j];
   const inv = (M)=>{const n=M.length; const A=copy(M); const I=eye(n);
-    for(let i=0;i<n;i++){
-      let piv=i; let mv=Math.abs(A[i][i]);
-      for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>mv){mv=Math.abs(A[r][i]);piv=r;}
-      if(piv!==i){ [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]]; }
+    for(let i=0;i<n;i++){ let piv=i; let mv=Math.abs(A[i][i]); for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>mv){mv=Math.abs(A[r][i]);piv=r;} if(piv!==i){ [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]]; }
       const d=A[i][i]; if(Math.abs(d)<1e-14) throw Error("Singular matrix");
       for(let j=0;j<n;j++){ A[i][j]/=d; I[i][j]/=d; }
-      for(let r=0;r<n;r++) if(r!==i){
-        const m=A[r][i];
-        for(let j=0;j<n;j++){ A[r][j]-=m*A[i][j]; I[r][j]-=m*I[i][j]; }
-      }
-    } return I;
-  };
+      for(let r=0;r<n;r++) if(r!==i){ const m=A[r][i]; for(let j=0;j<n;j++){ A[r][j]-=m*A[i][j]; I[r][j]-=m*I[i][j]; } }
+    } return I; };
   const DLinv = inv(DL);
-  const T = matMul(DLinv, (function(){const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) S[i][j]=(1-w)*(i===j?D[i][i]:0)+w*U[i][j]; return S;})());
-  const C = matVec(DLinv, b).map(v=>w*v);
-  const rho = spectralRadius(T);
-  const iters=[]; let x=x0.slice(), E=Infinity, k=0;
-  while(E>tol && k<Nmax){
-    const x1 = matVec(T,x).map((v,i)=>v + C[i]);
-    E=norm2(vecSub(x1,x)); iters.push([k+1,E,...x1]); x=x1; k++;
-  }
+  const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) S[i][j]=(1-w)*(i===j?D[i][i]:0)+w*U[i][j];
+  const T = matMul(DLinv, S); const C = matVec(DLinv, b).map(v=>w*v); const rho = spectralRadius(T);
+  const iters=[]; let x=x0.slice(), E=Infinity, k=0; while(E>tol && k<Nmax){ const x1 = matVec(T,x).map((v,i)=>v + C[i]); E=norm2(vecSub(x1,x)); iters.push([k+1,E,...x1]); x=x1; k++; }
   return {x,iters,T,C,rho};
 }
 
-/* ---------- Interpolation (course style) ---------- */
-function vandermondeCoef(X,Y){
-  const n=X.length; const A=zeros(n,n);
-  for(let i=0;i<n;i++) for(let j=0;j<n;j++) A[i][j] = Math.pow(X[i], n-1-j);
-  const coef = solveRef(A, Y);
-  return coef; // highest to constant
-}
-function newtonDivDif(X,Y){
-  const n=X.length; const D = Array.from({length:n},()=>Array(n).fill(0));
-  for(let i=0;i<n;i++) D[i][0]=Y[i];
-  for(let j=1;j<n;j++){
-    for(let i=j;i<n;i++){
-      const num = D[i][j-1]-D[i-1][j-1];
-      const den = X[i]-X[i-j];
-      D[i][j]=num/den;
-    }
-  }
-  const coef = Array(n).fill(0).map((_,i)=>D[i][i]); // b0..bn-1
-  return {D, coef};
-}
-function lagrangePolys(X,Y){
-  const n=X.length; const L = zeros(n,n); // each row poly coef deg n-1..0
-  for(let i=0;i<n;i++){
-    const others = X.filter((_,k)=>k!==i);
-    // build poly Π (x - xj)
-    let poly=[1,-others[0]];
-    for(let j=1;j<others.length;j++){
-      const pj=[1,-others[j]];
-      const r = Array(poly.length+pj.length-1).fill(0);
-      for(let a=0;a<poly.length;a++) for(let b=0;b<pj.length;b++) r[a+b]+=poly[a]*pj[b];
-      poly=r;
-    }
-    // scale so that L_i(X_i)=1
-    // evaluate poly at x_i
-    let val=0; for(let k=0;k<poly.length;k++) val += poly[k]*Math.pow(X[i], poly.length-1-k);
-    const Li = poly.map(c=>c/val);
-    L[i]=Li;
-  }
-  // Interpolant coefficients Coef = Y * L (row sum)
-  const Coef = Array(L[0].length).fill(0);
-  for(let i=0;i<n;i++) for(let j=0;j<Coef.length;j++) Coef[j]+=Y[i]*L[i][j];
-  return {L, Coef};
-}
-function splineLineal(X,Y){
-  const n=X.length, m=2*(n-1);
-  const A=zeros(m,m), b=Array(m).fill(0);
-  let row=0;
-  // interpolation
-  A[row][0]=X[0]; A[row][1]=1; b[row]=Y[0]; row++;
-  for(let i=1;i<n;i++){
-    A[row][2*i-1]=X[i]; A[row][2*i]=1; b[row]=Y[i]; row++;
-  }
-  // continuity
-  for(let i=1;i<n-1;i++){
-    // a_i x_i + b_i  = a_{i+1} x_i + b_{i+1}
-    A[row][2*i-1]=X[i]; A[row][2*i]=1; A[row][2*i+1]=-X[i]; A[row][2*i+2]=-1; b[row]=0; row++;
-  }
-  // solve
-  const coef = solveRef(A,b); // [a1,b1,a2,b2,...]
-  const C=[]; for(let i=0;i<n-1;i++) C.push([coef[2*i],coef[2*i+1]]);
-  return C;
-}
-function splineCuadratico(X,Y){
-  const n=X.length, m=3*(n-1);
-  const A=zeros(m,m), b=Array(m).fill(0); let row=0;
-  // interpolation
-  A[row][0]=X[0]**2; A[row][1]=X[0]; A[row][2]=1; b[row]=Y[0]; row++;
-  for(let i=1;i<n;i++){
-    const j=3*i-2;
-    A[row][j]=X[i]**2; A[row][j+1]=X[i]; A[row][j+2]=1; b[row]=Y[i]; row++;
-  }
-  // continuity
-  for(let i=1;i<n-1;i++){
-    const jm=3*(i-1), jp=3*i;
-    // S_i(x_i) = S_{i+1}(x_i)
-    A[row][jm]=X[i]**2; A[row][jm+1]=X[i]; A[row][jm+2]=1;
-    A[row][jp]=-X[i]**2; A[row][jp+1]=-X[i]; A[row][jp+2]=-1; row++;
-    // S'_i(x_i) = S'_{i+1}(x_i)
-    A[row][jm]=2*X[i]; A[row][jm+1]=1;
-    A[row][jp]=-2*X[i]; A[row][jp+1]=-1; row++;
-  }
-  // boundary S''_1(X0)=0
-  A[row][0]=2; b[row]=0;
-  const coef = solveRef(A,b);
-  const C=[]; for(let i=0;i<n-1;i++) C.push([coef[3*i],coef[3*i+1],coef[3*i+2]]);
-  return C;
-}
-function splineCubico(X,Y){
-  const n=X.length, m=4*(n-1);
-  const A=zeros(m,m), b=Array(m).fill(0); let row=0;
-  // interpolation
-  A[row][0]=X[0]**3; A[row][1]=X[0]**2; A[row][2]=X[0]; A[row][3]=1; b[row]=Y[0]; row++;
-  for(let i=1;i<n;i++){
-    const j=4*i-3;
-    A[row][j]=X[i]**3; A[row][j+1]=X[i]**2; A[row][j+2]=X[i]; A[row][j+3]=1; b[row]=Y[i]; row++;
-  }
-  // continuity
-  for(let i=1;i<n-1;i++){
-    const jm=4*(i-1), jp=4*i, x=X[i];
-    // S_i(x_i) = S_{i+1}(x_i)
-    A[row][jm]=x**3; A[row][jm+1]=x**2; A[row][jm+2]=x; A[row][jm+3]=1;
-    A[row][jp]=-x**3; A[row][jp+1]=-x**2; A[row][jp+2]=-x; A[row][jp+3]=-1; row++;
-    // S'_i(x_i) = S'_{i+1}(x_i)
-    A[row][jm]=3*x**2; A[row][jm+1]=2*x; A[row][jm+2]=1;
-    A[row][jp]=-3*x**2; A[row][jp+1]=-2*x; A[row][jp+2]=-1; row++;
-    // S''_i(x_i) = S''_{i+1}(x_i)
-    A[row][jm]=6*x; A[row][jm+1]=2;
-    A[row][jp]=-6*x; A[row][jp+1]=-2; row++;
-  }
-  // natural boundary S'' at ends = 0
-  const x0=X[0], xn=X[n-1];
-  A[row][0]=6*x0; A[row][1]=2; row++;
-  const j=4*(n-2);
-  A[row][j]=6*xn; A[row][j+1]=2; row++;
-  const coef = solveRef(A,b);
-  const C=[]; for(let i=0;i<n-1;i++) C.push([coef[4*i],coef[4*i+1],coef[4*i+2],coef[4*i+3]]);
-  return C;
-}
+/* ---------- Interpolation ---------- */
+function vandermondeCoef(X,Y){ const n=X.length; const A=zeros(n,n); for(let i=0;i<n;i++) for(let j=0;j<n;j++) A[i][j] = Math.pow(X[i], n-1-j); return solveRef(A, Y); }
+function newtonDivDif(X,Y){ const n=X.length; const D = Array.from({length:n},()=>Array(n).fill(0)); for(let i=0;i<n;i++) D[i][0]=Y[i]; for(let j=1;j<n;j++) for(let i=j;i<n;i++){ const num = D[i][j-1]-D[i-1][j-1]; const den = X[i]-X[i-j]; D[i][j]=num/den; } const coef = Array(n).fill(0).map((_,i)=>D[i][i]); return {D, coef}; }
+function lagrangePolys(X,Y){ const n=X.length; const L = zeros(n,n); for(let i=0;i<n;i++){ const others = X.filter((_,k)=>k!==i); let poly=[1,-others[0]]; for(let j=1;j<others.length;j++){ const pj=[1,-others[j]]; const r = Array(poly.length+pj.length-1).fill(0); for(let a=0;a<poly.length;a++) for(let b=0;b<pj.length;b++) r[a+b]+=poly[a]*pj[b]; poly=r; } let val=0; for(let k=0;k<poly.length;k++) val += poly[k]*Math.pow(X[i], poly.length-1-k); const Li = poly.map(c=>c/val); L[i]=Li; } const Coef = Array(L[0].length).fill(0); for(let i=0;i<n;i++) for(let j=0;j<Coef.length;j++) Coef[j]+=Y[i]*L[i][j]; return {L, Coef}; }
+function splineLineal(X,Y){ const n=X.length, m=2*(n-1); const A=zeros(m,m), b=Array(m).fill(0); let row=0; A[row][0]=X[0]; A[row][1]=1; b[row]=Y[0]; row++; for(let i=1;i<n;i++){ A[row][2*i-1]=X[i]; A[row][2*i]=1; b[row]=Y[i]; row++; } for(let i=1;i<n-1;i++){ A[row][2*i-1]=X[i]; A[row][2*i]=1; A[row][2*i+1]=-X[i]; A[row][2*i+2]=-1; b[row]=0; row++; } const coef = solveRef(A,b); const C=[]; for(let i=0;i<n-1;i++) C.push([coef[2*i],coef[2*i+1]]); return C; }
+function splineCuadratico(X,Y){ const n=X.length, m=3*(n-1); const A=zeros(m,m), b=Array(m).fill(0); let row=0; A[row][0]=X[0]**2; A[row][1]=X[0]; A[row][2]=1; b[row]=Y[0]; row++; for(let i=1;i<n;i++){ const j=3*i-2; A[row][j]=X[i]**2; A[row][j+1]=X[i]; A[row][j+2]=1; b[row]=Y[i]; row++; } for(let i=1;i<n-1;i++){ const jm=3*(i-1), jp=3*i; A[row][jm]=X[i]**2; A[row][jm+1]=X[i]; A[row][jm+2]=1; A[row][jp]=-X[i]**2; A[row][jp+1]=-X[i]; A[row][jp+2]=-1; row++; A[row][jm]=2*X[i]; A[row][jm+1]=1; A[row][jp]=-2*X[i]; A[row][jp+1]=-1; row++; } A[row][0]=2; b[row]=0; const coef = solveRef(A,b); const C=[]; for(let i=0;i<n-1;i++) C.push([coef[3*i],coef[3*i+1],coef[3*i+2]]); return C; }
+function splineCubico(X,Y){ const n=X.length, m=4*(n-1); const A=zeros(m,m), b=Array(m).fill(0); let row=0; A[row][0]=X[0]**3; A[row][1]=X[0]**2; A[row][2]=X[0]; A[row][3]=1; b[row]=Y[0]; row++; for(let i=1;i<n;i++){ const j=4*i-3; A[row][j]=X[i]**3; A[row][j+1]=X[i]**2; A[row][j+2]=X[i]; A[row][j+3]=1; b[row]=Y[i]; row++; } for(let i=1;i<n-1;i++){ const jm=4*(i-1), jp=4*i, x=X[i]; A[row][jm]=x**3; A[row][jm+1]=x**2; A[row][jm+2]=x; A[row][jm+3]=1; A[row][jp]=-x**3; A[row][jp+1]=-x**2; A[row][jp+2]=-x; A[row][jp+3]=-1; row++; A[row][jm]=3*x**2; A[row][jm+1]=2*x; A[row][jm+2]=1; A[row][jp]=-3*x**2; A[row][jp+1]=-2*x; A[row][jp+2]=-1; row++; A[row][jm]=6*x; A[row][jm+1]=2; A[row][jp]=-6*x; A[row][jp+1]=-2; row++; } const x0=X[0], xn=X[n-1]; A[row][0]=6*x0; A[row][1]=2; row++; const j=4*(n-2); A[row][j]=6*xn; A[row][j+1]=2; row++; const coef = solveRef(A,b); const C=[]; for(let i=0;i<n-1;i++) C.push([coef[4*i],coef[4*i+1],coef[4*i+2],coef[4*i+3]]); return C; }
 
-/* =============================== UI & Wiring =============================== */
-class Recommendation extends Error{}
-
+/* =============================== UI =============================== */
 const METHODS = {
   root: {
     'Bisection (a>b)': {
@@ -574,7 +384,7 @@ const METHODS = {
         {id:'tol', label:'tol', type:'num', def:'1e-6'},
         {id:'kmax', label:'max iterations', type:'num', def:'100'}
       ],
-      prereq: 'Need a>b and f(a)*f(b) < 0 to guarantee a root inside. Show first 3 and last 3 iterations.',
+      prereq: 'Need a>b and f(a)*f(b) < 0 to guarantee a root inside. Shows first 3 and last 3 iterations.',
       run: () => {
         const {src,f} = parseFun('fx');
         const a=parseNum('a'), b=parseNum('b'), tol=parseNum('tol'), k=parseNum('kmax');
@@ -598,318 +408,111 @@ const METHODS = {
         const {src,f}=parseFun('fx'); const x0=parseNum('x0');
         const tol=parseNum('tol'), k=parseNum('kmax');
         const out = newtonRoot(f,x0,tol,k);
-        return {
-          status: ['ok','Newton completed'],
-          summary:`root ≈ ${fmt(out.root)}`,
-          details:{iters:out.iters, fsrc:src, plot:(div)=>Plots.funcRoot(div,f,[x0-5,x0+5], out.root)}
-        };
+        return { status: ['ok','Newton completed'], summary:`root ≈ ${fmt(out.root)}`, details:{iters:out.iters, fsrc:src, plot:(div)=>Plots.funcRoot(div,f,[x0-5,x0+5], out.root)} };
       }
     }
   },
   matrix: {
     'LU (Gaussian simple)':{
-      inputs:[
-        {id:'A', label:'A (rows by newline; cols by space/comma)', type:'mat'},
-        {id:'b', label:'b (vector)', type:'vec'}
-      ],
+      inputs:[ {id:'A', label:'A (rows by newline; cols by space/comma)', type:'mat'}, {id:'b', label:'b (vector)', type:'vec'} ],
       prereq:'Square invertible A. Prints stages L and U as in course codes. Solve with forward/backward substitution.',
-      run: ()=>{
-        const A=parseMat('A'), b=parseVec('b');
-        if(A.length!==A[0].length) throw Error("A must be square");
-        const {L,U}=luSimple(A);
-        const x=bwdSub(U, fwdSub(L,b));
-        return {
-          status:['ok','LU (simple) completed'],
-          summary:`x = [${x.map(v=>fmt(v,6)).join(', ')}]`,
-          details:{matrices:{L,U}, compare:true}
-        };
-      }
+      run: ()=>{ const A=parseMat('A'), b=parseVec('b'); if(A.length!==A[0].length) throw Error('A must be square'); const {L,U}=luSimple(A); const x=bwdSub(U, fwdSub(L,b)); return {status:['ok','LU (simple) completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; }
     },
     'LU (partial pivoting)':{
-      inputs:[
-        {id:'A', label:'A (rows by newline; cols by space/comma)', type:'mat'},
-        {id:'b', label:'b (vector)', type:'vec'}
-      ],
-      prereq:'Square invertible A. Shows L,U,P as in the course code with row swaps. ',
-      run: ()=>{
-        const A=parseMat('A'), b=parseVec('b');
-        if(A.length!==A[0].length) throw Error("A must be square");
-        const {L,U,P}=luPartialPivot(A);
-        const Pb = matVec(P,b), x=bwdSub(U, fwdSub(L,Pb));
-        return {status:['ok','LU (partial pivot) completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U,P}, compare:true}};
-      }
+      inputs:[ {id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'} ],
+      prereq:'Square invertible A. Shows L,U,P as in the course code with row swaps.',
+      run: ()=>{ const A=parseMat('A'), b=parseVec('b'); if(A.length!==A[0].length) throw Error('A must be square'); const {L,U,P}=luPartialPivot(A); const x=bwdSub(U, fwdSub(L, matVec(P,b))); return {status:['ok','LU (partial pivot) completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U,P}, compare:true}}; }
     },
-    'Crout':{
-      inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'}],
-      prereq:'Square invertible A. L has non-unit diagonal; U has ones on diagonal.',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b');
-        const {L,U}=crout(A);
-        const x=bwdSub(U, fwdSub(L,b));
-        return {status:['ok','Crout completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}};
-      }
-    },
-    'Doolittle':{
-      inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'}],
-      prereq:'Square invertible A. U has general diagonal; L has ones on diagonal.',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b');
-        const {L,U}=doolittle(A);
-        const x=bwdSub(U, fwdSub(L,b));
-        return {status:['ok','Doolittle completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}};
-      }
-    },
-    'Cholesky (course variant)':{
-      inputs:[{id:'A',label:'A (symmetric; SPD expected)',type:'mat'},{id:'b',label:'b',type:'vec'}],
-      prereq:'Needs SPD matrix under course rules. Stops if a_11=0 or if a non-positive pivot appears.',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b');
-        const {L,U}=choleskyCourse(A);
-        const x=bwdSub(U, fwdSub(L,b));
-        return {status:['ok','Cholesky completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}};
-      }
-    },
-    'Jacobi':{
-      inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],
-      prereq:'Diagonal must have no zeros. We compute T, C, and the spectral radius ρ(T). If ρ>1, we still run and explain.',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N');
-        const out=jacobi(A,b,x0,tol,N);
-        const note = out.rho>1 ? ['warn',`Jacobi ρ(T)=${fmt(out.rho,6)} > 1 (may diverge).`] : ['ok',`Jacobi ρ(T)=${fmt(out.rho,6)}`];
-        return {status:note, summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]) , compare:true}};
-      }
-    },
-    'Gauss-Seidel':{
-      inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],
-      prereq:'Diagonal without zeros. We show T, C, spectral radius of T.',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N');
-        const out=gaussSeidel(A,b,x0,tol,N);
-        return {status:['ok',`Gauss-Seidel ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}};
-      }
-    },
-    'SOR (w)':{
-      inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'w',label:'w (0<w<2)',type:'num',def:'1.5'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],
-      prereq:'Pick 0<w<2. We show T, C and ρ(T).',
-      run:()=>{
-        const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), w=parseNum('w'), tol=parseNum('tol'), N=parseNum('N');
-        const out=sor(A,b,x0,w,tol,N);
-        return {status:['ok',`SOR ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}};
-      }
-    }
+    'Crout':{ inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'}], prereq:'Square invertible A. L non‑unit diag; U unit diag.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=crout(A); const x=bwdSub(U, fwdSub(L,b)); return {status:['ok','Crout completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Doolittle':{ inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'}], prereq:'Square invertible A. L unit diag; U general.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=doolittle(A); const x=bwdSub(U, fwdSub(L,b)); return {status:['ok','Doolittle completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Cholesky (course variant)':{ inputs:[{id:'A',label:'A (symmetric; SPD expected)',type:'mat'},{id:'b',label:'b',type:'vec'}], prereq:'Needs SPD matrix under course rules. Stops if a_11=0 or if a non‑positive pivot appears.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=choleskyCourse(A); const x=bwdSub(U, fwdSub(L,b)); return {status:['ok','Cholesky completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Jacobi':{ inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}], prereq:'Diagonal must have no zeros. We compute T, C, and spectral radius ρ(T). If ρ>1, we still run and explain.', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N'); const out=jacobi(A,b,x0,tol,N); const note = out.rho>1 ? ['warn',`Jacobi ρ(T)=${fmt(out.rho,6)} > 1 (may diverge).`] : ['ok',`Jacobi ρ(T)=${fmt(out.rho,6)}`]; return {status:note, summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]) , compare:true}}; } },
+    'Gauss-Seidel':{ inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}], prereq:'Diagonal without zeros. We show T, C, spectral radius of T.', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N'); const out=gaussSeidel(A,b,x0,tol,N); return {status:['ok',`Gauss‑Seidel ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}}; } },
+    'SOR (w)':{ inputs:[{id:'A',label:'A',type:'mat'},{id:'b',label:'b',type:'vec'},{id:'x0',label:'x0',type:'vec',def:'0 0 0 0'},{id:'w',label:'w (0<w<2)',type:'num',def:'1.5'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}], prereq:'Pick 0<w<2. We show T, C and ρ(T).', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), w=parseNum('w'), tol=parseNum('tol'), N=parseNum('N'); const out=sor(A,b,x0,w,tol,N); return {status:['ok',`SOR ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}}; } }
   },
   interp: {
-    'Vandermonde':{
-      inputs:[{id:'xy',label:'Table x;y per line (e.g., -1;15.5)', type:'pairs'}],
-      prereq:'Builds Vandermonde matrix and solves for coefficients (highest degree first).',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy');
-        const coef=vandermondeCoef(X,Y);
-        return {status:['ok','Vandermonde completed'], summary:`coef = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{poly:coef, pts:{X,Y}}};
-      }
-    },
-    'Newton (divided differences)':{
-      inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}],
-      prereq:'Shows divided-difference table and Newton coefficients.',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy'); const {D,coef}=newtonDivDif(X,Y);
-        return {status:['ok','Newton (divided differences) completed'], summary:`b = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{D, pts:{X,Y}}};
-      }
-    },
-    'Lagrange':{
-      inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}],
-      prereq:'Prints L_i(x) polynomials and the final interpolant P(x).',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy'); const {L,Coef}=lagrangePolys(X,Y);
-        return {status:['ok','Lagrange completed'], summary:`P(x) coefficients = [${Coef.map(c=>fmt(c)).join(', ')}]`, details:{L, pts:{X,Y}, poly:Coef}};
-      }
-    },
-    'Linear splines':{
-      inputs:[{id:'xy',label:'Table x;y per line (x increasing)', type:'pairs'}],
-      prereq:'Builds piecewise linear splines and prints coefficients a_i x + b_i per interval.',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy'); const C=splineLineal(X,Y);
-        return {status:['ok','Linear splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}};
-      }
-    },
-    'Quadratic splines':{
-      inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}],
-      prereq:'Quadratic splines with C1 continuity and S1\'\'(x0)=0 boundary.',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy'); const C=splineCuadratico(X,Y);
-        return {status:['ok','Quadratic splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}};
-      }
-    },
-    'Cubic splines (natural)':{
-      inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}],
-      prereq:'Natural boundary S\'\'(x0)=S\'\'(xn)=0; prints coefficients ax^3+bx^2+cx+d.',
-      run:()=>{
-        const {X,Y}=UI.parsePairs('xy'); const C=splineCubico(X,Y);
-        return {status:['ok','Cubic splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}};
-      }
-    }
+    'Vandermonde':{ inputs:[{id:'xy',label:'Table x;y per line (e.g., -1;15.5)', type:'pairs'}], prereq:'Builds Vandermonde matrix and solves for coefficients (highest degree first).', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const coef=vandermondeCoef(X,Y); return {status:['ok','Vandermonde completed'], summary:`coef = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{poly:coef, pts:{X,Y}}}; } },
+    'Newton (divided differences)':{ inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}], prereq:'Shows divided‑difference table and Newton coefficients.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const {D,coef}=newtonDivDif(X,Y); return {status:['ok','Newton (divided differences) completed'], summary:`b = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{D, pts:{X,Y}}}; } },
+    'Lagrange':{ inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}], prereq:'Prints L_i(x) polynomials and the final interpolant P(x).', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const {L,Coef}=lagrangePolys(X,Y); return {status:['ok','Lagrange completed'], summary:`P(x) coefficients = [${Coef.map(c=>fmt(c)).join(', ')}]`, details:{L, pts:{X,Y}, poly:Coef}}; } },
+    'Linear splines':{ inputs:[{id:'xy',label:'Table x;y per line (x increasing)', type:'pairs'}], prereq:'Builds piecewise linear splines and prints coefficients a_i x + b_i per interval.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const C=splineLineal(X,Y); return {status:['ok','Linear splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}}; } },
+    'Quadratic splines':{ inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}], prereq:'Quadratic splines with C1 continuity and S1\'\'(x0)=0 boundary.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const C=splineCuadratico(X,Y); return {status:['ok','Quadratic splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}}; } },
+    'Cubic splines (natural)':{ inputs:[{id:'xy',label:'Table x;y per line', type:'pairs'}], prereq:'Natural boundary S\'\'(x0)=S\'\'(xn)=0; prints coefficients ax^3+bx^2+cx+d.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const C=splineCubico(X,Y); return {status:['ok','Cubic splines ready'], summary:`${C.length} segments`, details:{spl:C, pts:{X,Y}}}; } }
   }
 };
 
-/* ---------- UI helpers ---------- */
 const UI = {
   init(){
     this.populateMethods();
-    category.addEventListener('change', ()=>this.populateMethods());
-    method.addEventListener('change', ()=>this.renderInputs());
-    runBtn.addEventListener('click', ()=>this.run());
+    document.getElementById('category').addEventListener('change', ()=>this.populateMethods());
+    document.getElementById('method').addEventListener('change', ()=>this.renderInputs());
     this.renderInputs();
     History.render();
     Guide.render();
   },
   populateMethods(){
-    const cat=category.value; method.innerHTML='';
-    Object.keys(METHODS[cat]).forEach(k=>{
-      const o=document.createElement('option'); o.value=k; o.textContent=k; method.appendChild(o);
-    });
+    const category=document.getElementById('category');
+    const methodSel=document.getElementById('method');
+    const cat=category.value; methodSel.innerHTML='';
+    Object.keys(METHODS[cat]).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; methodSel.appendChild(o); });
     this.renderInputs();
   },
   renderInputs(){
-    const cat=category.value, m=method.value || Object.keys(METHODS[cat])[0];
-    method.value=m;
-    const meta=METHODS[cat][m];
-    // prereqs
-    prereq.textContent = meta.prereq || '';
-    // inputs
-    inputs.innerHTML='';
+    const cat=document.getElementById('category').value, m=document.getElementById('method').value || Object.keys(METHODS[cat])[0];
+    document.getElementById('method').value=m; const meta=METHODS[cat][m];
+    document.getElementById('prereq').textContent = meta.prereq || '';
+    const inputs=document.getElementById('inputs'); inputs.innerHTML='';
     (meta.inputs||[]).forEach(inp=>{
       const wrap=document.createElement('div'); wrap.className='flex flex-col';
-      const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=inp.label;
-      wrap.appendChild(lab);
-      let el;
-      if(inp.type==='fun'){ el=document.createElement('input'); el.placeholder=inp.hint||''; el.value=inp.def||''; }
+      const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=inp.label; wrap.appendChild(lab);
+      let el; if(inp.type==='fun'){ el=document.createElement('input'); el.placeholder=inp.hint||''; el.value=inp.def||''; }
       else if(inp.type==='num'){ el=document.createElement('input'); el.value=inp.def||''; }
-      else if(inp.type==='vec'){ el=document.createElement('textarea'); el.rows=2; el.placeholder='e.g., 1 1 1 1'; el.value=inp.def||''; }
+      else if(inp.type==='vec'){ el=document.createElement('textarea'); el.rows=2; el.placeholder='e.g., 1 1 1'; el.value=inp.def||''; }
       else if(inp.type==='mat'){ el=document.createElement('textarea'); el.rows=4; el.placeholder='e.g., 4 -1 0 3\n1 15.5 3 8\n0 -1.3 -4 1.1\n14 5 -2 30'; }
       else if(inp.type==='pairs'){ el=document.createElement('textarea'); el.rows=4; el.placeholder='x;y per line (e.g., -1;15.5)'; }
-      el.id=inp.id; el.className='rounded-lg border p-2 code';
-      wrap.appendChild(el); inputs.appendChild(wrap);
+      el.id=inp.id; el.className='rounded-lg border p-2 code'; wrap.appendChild(el); inputs.appendChild(wrap);
     });
   },
   parsePairs(id){
-    const raw=document.getElementById(id).value.trim();
-    if(!raw) throw Error("Table is empty");
-    const X=[], Y=[];
-    raw.split(/\n+/).forEach(line=>{
-      const parts = line.split(/[;\s,]+/).filter(Boolean).map(Number);
-      if(parts.length!==2 || parts.some(v=>!Number.isFinite(v))) throw Error("Each line must be x;y with numeric values");
-      X.push(parts[0]); Y.push(parts[1]);
-    });
+    const raw=document.getElementById(id).value.trim(); if(!raw) throw Error('Table is empty');
+    const X=[], Y=[]; raw.split(/\n+/).forEach(line=>{ const parts = line.split(/[;\s,]+/).filter(Boolean).map(Number); if(parts.length!==2 || parts.some(v=>!Number.isFinite(v))) throw Error('Each line must be x;y with numeric values'); X.push(parts[0]); Y.push(parts[1]); });
     return {X,Y};
   },
-  status(kind,msg){
-    const cls = kind==='ok'?'badge-ok': kind==='warn'?'badge-warn':'badge-err';
-    status.innerHTML = `<div class="card"><span class="badge ${cls}">${kind.toUpperCase()}</span> <span class="ml-2">${msg}</span></div>`;
-  },
-  clearAll(){ outputs.innerHTML=''; iters.innerHTML=''; plot.innerHTML=''; status.innerHTML=''; },
+  status(kind,msg){ const cls = kind==='ok'?'badge-ok': kind==='warn'?'badge-warn':'badge-err'; document.getElementById('status').innerHTML = `<div class="card"><span class="badge ${cls}">${kind.toUpperCase()}</span> <span class="ml-2">${msg}</span></div>`; },
+  clearAll(){ document.getElementById('outputs').innerHTML=''; document.getElementById('iters').innerHTML=''; document.getElementById('plot').innerHTML=''; document.getElementById('status').innerHTML=''; },
   run(){
     try{
-      if(!ack.checked) throw Error("Please check the grammar/format acknowledgement checkbox.");
-      const cat=category.value, m=method.value, meta=METHODS[cat][m];
+      if(!document.getElementById('ack').checked) throw Error('Please check the grammar/format acknowledgement checkbox.');
+      const cat=document.getElementById('category').value, m=document.getElementById('method').value, meta=METHODS[cat][m];
       const res = meta.run();
-      // status
       this.status(res.status[0]==='ok'?'ok': res.status[0]==='warn'?'warn':'err', res.status[1]);
-      // outputs
-      outputs.innerHTML='';
-      if(res.details?.matrices){
-        const mats=res.details.matrices; for(const k in mats){
-          outputs.innerHTML += `<div><div class="font-semibold">${k}:</div><pre class="code">${fixedWidthMatrix(mats[k])}</pre></div>`;
-        }
-      }
-      if(res.details?.fsrc){ outputs.innerHTML += `<div><span class="font-semibold">f(x):</span> <span class="code">${res.details.fsrc}</span></div>`; }
-      outputs.innerHTML += `<div><span class="font-semibold">Summary:</span> ${res.summary}</div>`;
-      // comparison
-      if(compareRef.checked && (category.value==='matrix')){
-        const A=parseMat('A'), b=parseVec('b');
-        const xRef=solveRef(A,b);
-        const got = outputs.querySelector('.font-semibold + span') ? null : null; // keep structure simple
-        outputs.innerHTML += `<div><span class="font-semibold">Reference (direct solve):</span> [${xRef.map(v=>fmt(v)).join(', ')}]</div>`;
-        const xFromSummary = /x\s*=\s*\[(.*)\]/.exec(res.summary);
-        if(xFromSummary){
-          const xs = xFromSummary[1].split(',').map(s=>Number(s));
-          const diff = norm2(vecSub(xs,xRef))/Math.max(1e-12,norm2(xRef));
-          outputs.innerHTML += `<div><span class="font-semibold">Δ (relative norm):</span> ${fmt(diff,6)}</div>`;
-        }
+      const outDiv=document.getElementById('outputs'); outDiv.innerHTML='';
+      if(res.details?.matrices){ const mats=res.details.matrices; for(const k in mats){ outDiv.innerHTML += `<div><div class="font-semibold">${k}:</div><pre class="code">${fixedWidthMatrix(mats[k])}</pre></div>`; } }
+      if(res.details?.fsrc){ outDiv.innerHTML += `<div><span class="font-semibold">f(x):</span> <span class="code">${res.details.fsrc}</span></div>`; }
+      outDiv.innerHTML += `<div><span class="font-semibold">Summary:</span> ${res.summary}</div>`;
+      // comparison (matrix only)
+      if(document.getElementById('compareRef').checked && (cat==='matrix')){
+        const A=parseMat('A'), b=parseVec('b'); const xRef=solveRef(A,b);
+        outDiv.innerHTML += `<div><span class="font-semibold">Reference (direct):</span> [${xRef.map(v=>fmt(v)).join(', ')}]</div>`;
+        const mRes = /x\s*=\s*\[(.*)\]/.exec(res.summary); if(mRes){ const xs = mRes[1].split(',').map(s=>Number(s)); const diff = norm2(vecSub(xs,xRef))/Math.max(1e-12,norm2(xRef)); outDiv.innerHTML += `<div><span class="font-semibold">Δ (relative norm):</span> ${fmt(diff,6)}</div>`; }
       }
       // iterations table
-      iters.innerHTML='';
-      if(res.details?.iters?.length){
-        const rows=res.details.iters;
-        const head = `<tr class="text-left"><th class="table-sm">k</th>${rows[0].slice(1).map((_,i)=>`<th class="table-sm">c${i+1}</th>`).join('')}</tr>`;
-        const body = (arr)=>arr.map(r=>`<tr>${r.map((v,j)=>`<td class="table-sm">${j===0? v : fmt(v)}</td>`).join('')}</tr>`).join('');
-        const first = rows.slice(0,3), last = rows.slice(-3);
-        const mid = rows.length>6 ? `<tr><td class="table-sm ghost" colspan="${rows[0].length}">…</td></tr>` : '';
-        iters.innerHTML = `<table class="w-full table-sm">${head}${body(first)}${mid}${rows.length>3?body(last):''}</table>`;
-      }
+      const itDiv=document.getElementById('iters'); itDiv.innerHTML='';
+      if(res.details?.iters?.length){ const rows=res.details.iters; const head = `<tr class="text-left"><th class="table-sm">k</th>${rows[0].slice(1).map((_,i)=>`<th class="table-sm">c${i+1}</th>`).join('')}</tr>`; const body = (arr)=>arr.map(r=>`<tr>${r.map((v,j)=>`<td class="table-sm">${j===0? v : fmt(v)}</td>`).join('')}</tr>`).join(''); const first = rows.slice(0,3), last = rows.slice(-3); const mid = rows.length>6 ? `<tr><td class="table-sm ghost" colspan="${rows[0].length}">…</td></tr>` : ''; itDiv.innerHTML = `<table class="w-full table-sm">${head}${body(first)}${mid}${rows.length>3?body(last):''}</table>`; }
       // plot
-      plot.innerHTML=''; if(res.details?.plot){ res.details.plot('plot'); }
-      else if(category.value==='matrix'){
-        // show residuals for iterative methods if series present; otherwise print L/U/P already shown
-        if(res.details?.series){
-          Plots.series('plot', res.details.series, 'Residual norm per iteration');
-        }else{
-          Plots.blank('plot','Outputs shown at left (L, U, P, T, C).');
-        }
-      }else if(category.value==='interp'){
-        if(res.details?.pts){
-          Plots.scatterFit('plot', res.details.pts, res.details.poly || null, res.details.spl || null);
-        }
-      }
+      const p=document.getElementById('plot'); p.innerHTML=''; if(res.details?.plot){ res.details.plot('plot'); }
+      else if(cat==='matrix'){ if(res.details?.series){ Plots.series('plot', res.details.series, 'Residual norm per iteration'); } else { Plots.blank('plot','Outputs shown at left (L, U, P, T, C).'); } }
+      else if(cat==='interp'){ if(res.details?.pts){ Plots.scatterFit('plot', res.details.pts, res.details.poly || null, res.details.spl || null); } }
       // history
-      History.add({time:Date.now(), cat, method:m, fun:res.details?.fsrc||null, summary:res.summary});
-      History.render();
-      // guide
-      Guide.render();
-    }catch(e){
-      if(e instanceof Recommendation){ this.status('warn', e.message); }
-      else { this.status('err', e.message); }
-    }
+      History.add({time:Date.now(), cat, method:m, fun:res.details?.fsrc||null, summary:res.summary}); History.render(); Guide.render();
+    }catch(e){ if(e instanceof Recommendation){ this.status('warn', e.message); } else { this.status('err', e.message); } }
   }
 };
 
 const Plots = {
   blank(div,msg){ Plotly.newPlot(div,[{x:[0],y:[0],type:'scatter',mode:'markers',marker:{opacity:0}}],{annotations:[{text:msg,showarrow:false}]}); },
-  funcRoot(div,f,range,root){
-    const [L,R]=range; const xs=[], ys=[];
-    const n=200; const a=Math.min(L,R), b=Math.max(L,R);
-    for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; xs.push(x); ys.push(f(x));}
-    Plotly.newPlot(div,[
-      {x:xs,y:ys,type:'scatter',mode:'lines',name:'f(x)'},
-      {x:[root],y:[0],type:'scatter',mode:'markers+text',text:[`root=${fmt(root)}`],textposition:'top center',name:'root'},
-      {x:[a,b],y:[0,0],type:'scatter',mode:'lines',name:'x-axis',line:{dash:'dot'}}
-    ], {margin:{t:20},showlegend:false});
-  },
-  series(div,arr,title){
-    Plotly.newPlot(div,[{x:arr.map((_,i)=>i+1), y:arr, mode:'lines+markers+text', text:arr.map(v=>fmt(v,2)), textposition:'top center'}],
-      {margin:{t:20}, xaxis:{title:'k'}, yaxis:{title:'||e||'}, title});
-  },
-  scatterFit(div, pts, poly, spl){
-    const {X,Y}=pts;
-    const data=[{x:X,y:Y,mode:'markers+text',type:'scatter',text:Y.map(v=>fmt(v,3)),textposition:'top center',name:'data'}];
-    if(poly){
-      const n=poly.length, xs=[...Array(200).keys()].map(i=>X[0]+(X[X.length-1]-X[0])*i/199);
-      const ys=xs.map(x=> poly.reduce((s,c,j)=> s + c*Math.pow(x, n-1-j), 0));
-      data.push({x:xs,y:ys,mode:'lines',name:'fit'});
-    }
-    if(spl){
-      // draw each segment densely
-      for(let i=0;i<spl.length;i++){
-        const a=X[i], b=X[i+1];
-        const xs=[...Array(60).keys()].map(k=> a + (b-a)*k/59);
-        let ys;
-        if(spl[i].length===2){ const [p,q]=spl[i]; ys=xs.map(x=>p*x+q); }
-        else if(spl[i].length===3){ const [A,B,C]=spl[i]; ys=xs.map(x=>A*x*x+B*x+C); }
-        else { const [A,B,C,D]=spl[i]; ys=xs.map(x=>((A*x+B)*x+C)*x+D); }
-        data.push({x:xs,y:ys,mode:'lines',line:{dash:'dot'},showlegend:false});
-      }
-    }
-    Plotly.newPlot(div,data,{margin:{t:20}});
-  }
+  funcRoot(div,f,range,root){ const [L,R]=range; const xs=[], ys=[]; const n=200; const a=Math.min(L,R), b=Math.max(L,R); for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; xs.push(x); ys.push(f(x));} Plotly.newPlot(div,[ {x:xs,y:ys,type:'scatter',mode:'lines',name:'f(x)'}, {x:[root],y:[0],type:'scatter',mode:'markers+text',text:[`root=${fmt(root)}`],textposition:'top center',name:'root'}, {x:[a,b],y:[0,0],type:'scatter',mode:'lines',name:'x-axis',line:{dash:'dot'}} ], {margin:{t:20},showlegend:false}); },
+  series(div,arr,title){ Plotly.newPlot(div,[{x:arr.map((_,i)=>i+1), y:arr, mode:'lines+markers+text', text:arr.map(v=>fmt(v,2)), textposition:'top center'}], {margin:{t:20}, xaxis:{title:'k'}, yaxis:{title:'||e||'}, title}); },
+  scatterFit(div, pts, poly, spl){ const {X,Y}=pts; const data=[{x:X,y:Y,mode:'markers+text',type:'scatter',text:Y.map(v=>fmt(v,3)),textposition:'top center',name:'data'}]; if(poly){ const n=poly.length, xs=[...Array(200).keys()].map(i=>X[0]+(X[X.length-1]-X[0])*i/199); const ys=xs.map(x=> poly.reduce((s,c,j)=> s + c*Math.pow(x, n-1-j), 0)); data.push({x:xs,y:ys,mode:'lines',name:'fit'}); } if(spl){ for(let i=0;i<spl.length;i++){ const a=X[i], b=X[i+1]; const xs=[...Array(60).keys()].map(k=> a + (b-a)*k/59); let ys; if(spl[i].length===2){ const [p,q]=spl[i]; ys=xs.map(x=>p*x+q); } else if(spl[i].length===3){ const [A,B,C]=spl[i]; ys=xs.map(x=>A*x*x+B*x+C); } else { const [A,B,C,D]=spl[i]; ys=xs.map(x=>((A*x+B)*x+C)*x+D); } data.push({x:xs,y:ys,mode:'lines',line:{dash:'dot'},showlegend:false}); } } Plotly.newPlot(div,data,{margin:{t:20}}); }
 };
 
 /* ---------- History / Guide ---------- */
@@ -918,54 +521,11 @@ const History = {
   add(item){ const arr=this.get(); arr.unshift(item); localStorage.setItem(this.key, JSON.stringify(arr.slice(0,30))); },
   get(){ try{ return JSON.parse(localStorage.getItem(this.key)||'[]'); }catch{return []}},
   clear(){ localStorage.removeItem(this.key); this.render(); },
-  render(){
-    const arr=this.get();
-    history.innerHTML = arr.length? arr.map(h=>`
-      <div class="flex items-center justify-between border-b py-2">
-        <div>
-          <div class="font-semibold">${new Date(h.time).toLocaleString()}</div>
-          <div class="text-sm">${h.cat} • ${h.method}${h.fun? ` • f(x)=${h.fun}`:''}</div>
-          <div class="text-sm text-slate-600">${h.summary}</div>
-        </div>
-      </div>
-    `).join('') : '<div class="text-sm text-slate-600">No runs yet.</div>';
-  }
+  render(){ const arr=this.get(); document.getElementById('history').innerHTML = arr.length? arr.map(h=>`\n      <div class="flex items-center justify-between border-b py-2">\n        <div>\n          <div class="font-semibold">${new Date(h.time).toLocaleString()}</div>\n          <div class="text-sm">${h.cat} • ${h.method}${h.fun? ` • f(x)=${h.fun}`:''}</div>\n          <div class="text-sm text-slate-600">${h.summary}</div>\n        </div>\n      </div>\n    `).join('') : '<div class="text-sm text-slate-600">No runs yet.</div>'; }
 };
 const Guide = {
-  render(){
-    const cat=category.value, m=method.value;
-    const lines = {
-      'Bisection (a>b)':[
-        'Input: f(x), a>b, b is the right endpoint.',
-        'Requirement: sign change f(a)*f(b) < 0.',
-        'Stop: |b-a| ≤ tol or |f(m)| ≤ tol.',
-        'Tip: If no sign change, inspect the plot and pick an interval crossing the x-axis.'
-      ],
-      'Newton (root) x0=0 default':[
-        'Input: f(x), x0.',
-        'Requirement: derivative not near 0 around root.',
-        'Tip: Start at x0=0 as default; if it stalls, try moving x0 near a visible root.'
-      ],
-      'LU (Gaussian simple)':['Input: A square, b. Prints L and U; then solves.'],
-      'LU (partial pivoting)':['Input: A square, b. Shows L,U,P; more robust for zeros on pivots.'],
-      'Crout':['Input: A square, b. L non-unit diag; U unit diag.'],
-      'Doolittle':['Input: A square, b. L unit diag; U general.'],
-      'Cholesky (course variant)':['Input: symmetric A, b. Stops if non-positive pivot appears.'],
-      'Jacobi':['Input: A,b,x0,tol,N. No zeros on diagonal. We show T,C and spectral radius.'],
-      'Gauss-Seidel':['Input: A,b,x0,tol,N. Shows T,C and spectral radius.'],
-      'SOR (w)':['Input: A,b,x0,w,tol,N with 0<w<2. Shows T,C and spectral radius.'],
-      'Vandermonde':['Input: table (x;y). Returns polynomial coefficients.'],
-      'Newton (divided differences)':['Input: table (x;y). Shows divided-difference table.'],
-      'Lagrange':['Input: table (x;y). Prints L_i(x) and final polynomial.'],
-      'Linear splines':['Input: table (x;y). Shows a_i and b_i per interval.'],
-      'Quadratic splines':['Input: table (x;y). C1 continuity, S1\'\'(x0)=0.'],
-      'Cubic splines (natural)':['Input: table (x;y). Natural boundary S\'\' at ends = 0.']
-    }[m] || [];
-    guide.innerHTML = lines.map(s=>`<div>• ${s}</div>`).join('');
-  }
+  render(){ const cat=document.getElementById('category').value, m=document.getElementById('method').value; const lines = { 'Bisection (a>b)':['Input: f(x), a>b, b is the right endpoint.','Requirement: sign change f(a)*f(b) < 0.','Stop: |b-a| ≤ tol or |f(m)| ≤ tol.','Tip: If no sign change, inspect the plot and pick an interval crossing the x-axis.'], 'Newton (root) x0=0 default':['Input: f(x), x0.','Requirement: derivative not near 0 around root.','Tip: Start at x0=0 as default; if it stalls, try moving x0 near a visible root.'], 'LU (Gaussian simple)':['Input: A square, b. Prints L and U; then solves.'], 'LU (partial pivoting)':['Input: A square, b. Shows L,U,P; more robust for zeros on pivots.'], 'Crout':['Input: A square, b. L non-unit diag; U unit diag.'], 'Doolittle':['Input: A square, b. L unit diag; U general.'], 'Cholesky (course variant)':['Input: symmetric A, b. Stops if non-positive pivot appears.'], 'Jacobi':['Input: A,b,x0,tol,N. No zeros on diagonal. We show T,C and spectral radius.'], 'Gauss-Seidel':['Input: A,b,x0,tol,N. Shows T,C and spectral radius.'], 'SOR (w)':['Input: A,b,x0,w,tol,N with 0<w<2. Shows T,C and spectral radius.'], 'Vandermonde':['Input: table (x;y). Returns polynomial coefficients.'], 'Newton (divided differences)':['Input: table (x;y). Shows divided-difference table.'], 'Lagrange':['Input: table (x;y). Prints L_i(x) and final polynomial.'], 'Linear splines':['Input: table (x;y). Shows a_i and b_i per interval.'], 'Quadratic splines':['Input: table (x;y). C1 continuity, S1\'\'(x0)=0.'], 'Cubic splines (natural)':['Input: table (x;y). Natural boundary S\'\' at ends = 0.'] }[m] || []; document.getElementById('guide').innerHTML = lines.map(s=>`<div>• ${s}</div>`).join(''); }
 };
-
-window.addEventListener('DOMContentLoaded', ()=>UI.init());
 </script>
 </body>
 </html>

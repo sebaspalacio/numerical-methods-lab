@@ -14,6 +14,488 @@
     --err:#dc2626;     /* error */
     --ink:#0f172a;     /* text */
   }
+  <script>
+/* ================= BOOT & SAFE LOADER ================= */
+(function () {
+  // Ensure Plotly (only if you lo usas en tu HTML; si ya lo tienes, no pasa nada)
+  function ensurePlotly(cb) {
+    if (window.Plotly) return cb();
+    var s = document.createElement('script');
+    s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { ensurePlotly(boot); });
+  } else {
+    ensurePlotly(boot);
+  }
+})();
+
+/* ===================== CORE HELPERS ==================== */
+function fmt(x, k=6){ return Number.isFinite(x) ? Number(x).toFixed(k) : String(x); }
+function zeros(n,m){ return Array.from({length:n}, () => Array(m).fill(0)); }
+function eye(n){ const I=zeros(n,n); for(let i=0;i<n;i++) I[i][i]=1; return I; }
+function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+function matVec(A,x){ return A.map(r=>dot(r,x)); }
+function vecSub(a,b){ return a.map((v,i)=>v-b[i]); }
+function norm2(v){ return Math.sqrt(dot(v,v)); }
+function copy(A){ return A.map(r=>r.slice()); }
+function fixedWidthMatrix(M, k=6){
+  const s = M.map(r=>r.map(v=>fmt(v,k)));
+  const w = Math.max(...s.flat().map(t=>t.length));
+  return s.map(r=>' '+r.map(t=>t.padStart(w,' ')).join(' ')+' ').join('\n');
+}
+class Recommendation extends Error {}
+
+/* ===================== PARSERS & GUARDS ==================== */
+function parseNum(id,label=id){
+  const el=document.getElementById(id); if(!el) throw Error(`Missing input: ${label}`);
+  const raw = el.value.trim().replace(/,/g,'');
+  if(!/^[-+]?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i.test(raw)) throw Error(`Invalid number in ${label}`);
+  return Number(raw);
+}
+function parseFun(id){
+  const src = document.getElementById(id).value.trim();
+  if(!/^[\d\s\w\+\-\*\/\^\.(),x]*$/i.test(src)) throw Error("Function contains invalid characters");
+  const f = new Function('x', `with(Math){ return ${src.replaceAll('^','**')} }`);
+  try{ void f(0); }catch(e){ throw Error("Function is not valid"); }
+  return {src, f};
+}
+function parseVec(id,label=id){
+  const raw = document.getElementById(id).value.trim();
+  if(!raw) throw Error(`${label} is empty`);
+  const arr = raw.split(/[ ,\t\n]+/).filter(Boolean).map(Number);
+  if(arr.some(v=>!Number.isFinite(v))) throw Error(`${label} has invalid entries`);
+  return arr;
+}
+function parseMat(id,label=id){
+  const raw = document.getElementById(id).value.trim();
+  if(!raw) throw Error(`${label} is empty`);
+  const rows = raw.split(/\n|;/).map(r=>r.trim()).filter(Boolean);
+  const M = rows.map(r=>r.split(/[ ,\t]+/).filter(Boolean).map(Number));
+  const m = M[0].length;
+  if(M.some(r=>r.length!==m)) throw Error(`${label} must be rectangular`);
+  if(M.flat().some(v=>!Number.isFinite(v))) throw Error(`${label} has invalid entries`);
+  return M;
+}
+
+/* ===================== LINEAR ALGEBRA UTILS ==================== */
+function fwdSub(L,b){
+  const n=L.length, y=Array(n).fill(0);
+  for(let i=0;i<n;i++){
+    let s=0; for(let j=0;j<i;j++) s+=L[i][j]*y[j];
+    if(Math.abs(L[i][i])<1e-14) throw Error("Zero on diagonal in forward substitution");
+    y[i]=(b[i]-s)/L[i][i];
+  } return y;
+}
+function bwdSub(U,y){
+  const n=U.length, x=Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    let s=0; for(let j=i+1;j<n;j++) s+=U[i][j]*x[j];
+    if(Math.abs(U[i][i])<1e-14) throw Error("Zero on diagonal in backward substitution");
+    x[i]=(y[i]-s)/U[i][i];
+  } return x;
+}
+function solveRef(A,b){ // LU con pivoteo parcial para comparación
+  const n=A.length, M=copy(A), P=eye(n), L=eye(n);
+  for(let i=0;i<n-1;i++){
+    let piv=i, mv=Math.abs(M[i][i]);
+    for(let r=i+1;r<n;r++) if(Math.abs(M[r][i])>mv){mv=Math.abs(M[r][i]);piv=r;}
+    if(piv!==i){ [M[i],M[piv]]=[M[piv],M[i]]; [P[i],P[piv]]=[P[piv],P[i]]; for(let k=0;k<i;k++) [L[i][k],L[piv][k]]=[L[piv][k],L[i][k]]; }
+    for(let j=i+1;j<n;j++){ const m=M[j][i]/M[i][i]; L[j][i]=m; for(let k=i;k<n;k++) M[j][k]-=m*M[i][k]; }
+  }
+  const y=fwdSub(L, matVec(P,b));
+  return bwdSub(M,y);
+}
+function spectralRadius(T,max=200){
+  const n=T.length; let v=Array(n).fill(0); v[0]=1; let l=0;
+  for(let k=0;k<max;k++){
+    const w=matVec(T,v), nrm=norm2(w); if(nrm===0) return 0;
+    v=w.map(z=>z/nrm); const Tv=matVec(T,v); l = dot(v,Tv);
+  } return Math.abs(l);
+}
+
+/* ===================== METHODS (course-aligned) ==================== */
+// ROOTS
+function bisection(f,a,b,tol,maxIt){
+  if(!(a>b)) throw Error("In Bisection the left limit must be greater than the right limit (require a > b)");
+  if(f(a)*f(b)>=0) throw Recommendation("No sign change on [a,b]. Inspect the plot and choose an interval where f crosses the x-axis.");
+  const iters=[]; let fa=f(a), fb=f(b), mid, fm;
+  for(let k=1;k<=maxIt;k++){
+    mid=(a+b)/2; fm=f(mid);
+    iters.push([k,a,b,mid,fa,fb,fm,Math.abs(b-a)]);
+    if(Math.abs(fm)<=tol || Math.abs(b-a)<=tol) break;
+    if(fa*fm<0){ b=mid; fb=fm; } else { a=mid; fa=fm; }
+  } return {root:mid, iters};
+}
+function newtonRoot(f,x0,tol,maxIt){
+  const iters=[], der = x => (f(x+1e-6)-f(x-1e-6))/(2e-6);
+  let x=x0, fx=f(x);
+  for(let k=1;k<=maxIt;k++){
+    const d=der(x); if(Math.abs(d)<1e-14) throw Recommendation("Derivative near zero around current iterate. Try another initial guess.");
+    const x1=x - fx/d; iters.push([k,x,fx,d,x1,Math.abs(x1-x)]);
+    if(Math.abs(x1-x)<=tol){ x=x1; fx=f(x); break; }
+    x=x1; fx=f(x1);
+  } return {root:x, iters};
+}
+// LU simple
+function luSimple(A){
+  const n=A.length, L=eye(n), U=zeros(n,n), M=copy(A);
+  for(let i=0;i<n-1;i++){
+    for(let j=i+1;j<n;j++){ if(M[j][i]!==0){ const m=M[j][i]/M[i][i]; L[j][i]=m; for(let k=i;k<n;k++) M[j][k]-=m*M[i][k]; } }
+    for(let k=i;k<n;k++) U[i][k]=M[i][k];
+  } U[n-1][n-1]=M[n-1][n-1]; return {L,U};
+}
+// LU pivoteo parcial
+function luPartialPivot(A){
+  const n=A.length, L=eye(n), U=zeros(n,n), P=eye(n), M=copy(A);
+  for(let i=0;i<n-1;i++){
+    let piv=i, mv=Math.abs(M[i][i]);
+    for(let r=i+1;r<n;r++) if(Math.abs(M[r][i])>mv){mv=Math.abs(M[r][i]);piv=r;}
+    if(piv!==i){ [M[i],M[piv]]=[M[piv],M[i]]; [P[i],P[piv]]=[P[piv],P[i]]; for(let k=0;k<i;k++) [L[i][k],L[piv][k]]=[L[piv][k],L[i][k]]; }
+    for(let j=i+1;j<n;j++) if(M[j][i]!==0){ const m=M[j][i]/M[i][i]; L[j][i]=m; for(let k=i;k<n;k++) M[j][k]-=m*M[i][k]; }
+    for(let k=i;k<n;k++) U[i][k]=M[i][k];
+  } U[n-1][n-1]=M[n-1][n-1]; return {L,U,P};
+}
+// Crout
+function crout(A){
+  const n=A.length, L=zeros(n,n), U=eye(n);
+  for(let i=0;i<n;i++){
+    for(let j=i;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i]; L[j][i]=A[j][i]-s; }
+    for(let j=i+1;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j]; if(Math.abs(L[i][i])<1e-14) throw Error("Zero on diagonal in Crout"); U[i][j]=(A[i][j]-s)/L[i][i]; }
+  } return {L,U};
+}
+// Doolittle
+function doolittle(A){
+  const n=A.length, L=eye(n), U=zeros(n,n);
+  for(let i=0;i<n;i++){
+    for(let j=i;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][j]; U[i][j]=A[i][j]-s; }
+    for(let j=i+1;j<n;j++){ let s=0; for(let k=0;k<i;k++) s+=L[j][k]*U[k][i]; if(Math.abs(U[i][i])<1e-14) throw Error("Zero on diagonal in Doolittle"); L[j][i]=(A[j][i]-s)/U[i][i]; }
+  } return {L,U};
+}
+// Cholesky (variante del curso con chequeo a11 y pivote positivo)
+function choleskyCourse(A){
+  const n=A.length, L=zeros(n,n), U=zeros(n,n);
+  if(Math.abs(A[0][0])<1e-14) throw Error("a_11 = 0; cannot start Cholesky on this matrix.");
+  for(let i=0;i<n;i++){
+    let s=0; for(let k=0;k<i;k++) s+=L[i][k]*U[k][i];
+    const diag=A[i][i]-s; if(diag<=0) throw Recommendation("Non-positive pivot in Cholesky (A not SPD under course variant). Choose another A or reorder.");
+    L[i][i]=Math.sqrt(diag); U[i][i]=L[i][i];
+    for(let j=i+1;j<n;j++){ let s2=0; for(let k=0;k<i;k++) s2+=L[j][k]*U[k][i]; L[j][i]=(A[j][i]-s2)/U[i][i]; }
+    for(let j=i+1;j<n;j++){ let s3=0; for(let k=0;k<i;k++) s3+=L[i][k]*U[k][j]; U[i][j]=(A[i][j]-s3)/L[i][i]; }
+  } return {L,U};
+}
+// Jacobi / Gauss-Seidel / SOR
+function jacobi(A,b,x0,tol,Nmax){
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Jacobi: zero on diagonal");
+  const D = eye(n).map((r,i)=>r.map((_,j)=>i===j?A[i][i]:0));
+  const L=zeros(n,n), U=zeros(n,n);
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
+  const Di = eye(n).map((r,i)=>r.map((_,j)=>i===j?1/D[i][i]:0));
+  const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) S[i][j]=L[i][j]+U[i][j];
+  const T = mul(Di,S), C = matVec(Di,b), rho=spectralRadius(T);
+  const it=[], tol2=tol; let x=x0.slice(), E=Infinity, k=0;
+  while(E>tol2 && k<Nmax){ const x1 = matVec(T,x).map((v,i)=>v + C[i]); E=norm2(vecSub(x1,x)); it.push([k+1,E,...x1]); x=x1; k++; }
+  return {x, iters:it, T, C, rho};
+}
+function gaussSeidel(A,b,x0,tol,Nmax){
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("Gauss-Seidel: zero on diagonal");
+  const D = eye(n).map((r,i)=>r.map((_,j)=>i===j?A[i][i]:0));
+  const L=zeros(n,n), U=zeros(n,n);
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
+  const DL = zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) DL[i][j]=(i===j?D[i][i]:0) - L[i][j];
+  const DLinv = inv(DL); const T = mul(DLinv,U), C = matVec(DLinv,b), rho=spectralRadius(T);
+  const it=[]; let x=x0.slice(), E=Infinity, k=0;
+  while(E>tol && k<Nmax){ const x1 = matVec(T,x).map((v,i)=>v + C[i]); E=norm2(vecSub(x1,x)); it.push([k+1,E,...x1]); x=x1; k++; }
+  return {x, iters:it, T, C, rho};
+}
+function sor(A,b,x0,w,tol,Nmax){
+  if(!(w>0 && w<2)) throw Recommendation("SOR requires 0 < w < 2");
+  const n=A.length; for(let i=0;i<n;i++) if(Math.abs(A[i][i])<1e-14) throw Error("SOR: zero on diagonal");
+  const D = eye(n).map((r,i)=>r.map((_,j)=>i===j?A[i][i]:0));
+  const L=zeros(n,n), U=zeros(n,n);
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(i>j) L[i][j]=-A[i][j]; else if(i<j) U[i][j]=-A[i][j]; }
+  const DL=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) DL[i][j]=(i===j?D[i][i]:0) - w*L[i][j];
+  const DLinv=inv(DL);
+  const S=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) S[i][j]=(1-w)*(i===j?D[i][i]:0)+w*U[i][j];
+  const T=mul(DLinv,S), C=matVec(DLinv,b).map(v=>w*v), rho=spectralRadius(T);
+  const it=[]; let x=x0.slice(), E=Infinity, k=0;
+  while(E>tol && k<Nmax){ const x1=matVec(T,x).map((v,i)=>v + C[i]); E=norm2(vecSub(x1,x)); it.push([k+1,E,...x1]); x=x1; k++; }
+  return {x, iters:it, T, C, rho};
+}
+// small matrix ops
+function mul(A,B){ const n=A.length, m=B[0].length, k=B.length; const C=zeros(n,m);
+  for(let i=0;i<n;i++) for(let j=0;j<m;j++){ let s=0; for(let t=0;t<k;t++) s+=A[i][t]*B[t][j]; C[i][j]=s; }
+  return C;
+}
+function inv(M){ // simple Gauss-Jordan for small n
+  const n=M.length, A=copy(M), I=eye(n);
+  for(let i=0;i<n;i++){
+    let piv=i, mv=Math.abs(A[i][i]); for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>mv){mv=Math.abs(A[r][i]);piv=r;}
+    if(piv!==i){ [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]]; }
+    const d=A[i][i]; if(Math.abs(d)<1e-14) throw Error("Singular matrix");
+    for(let j=0;j<n;j++){ A[i][j]/=d; I[i][j]/=d; }
+    for(let r=0;r<n;r++) if(r!==i){ const m=A[r][i]; for(let j=0;j<n;j++){ A[r][j]-=m*A[i][j]; I[r][j]-=m*I[i][j]; } }
+  } return I;
+}
+
+/* ===================== INTERPOLATION (resumen) ==================== */
+function vandermondeCoef(X,Y){ const n=X.length, A=zeros(n,n); for(let i=0;i<n;i++)for(let j=0;j<n;j++) A[i][j]=Math.pow(X[i], n-1-j); return solveRef(A,Y); }
+function newtonDivDif(X,Y){ const n=X.length, D=Array.from({length:n},()=>Array(n).fill(0));
+  for(let i=0;i<n;i++) D[i][0]=Y[i];
+  for(let j=1;j<n;j++) for(let i=j;i<n;i++){ const num=D[i][j-1]-D[i-1][j-1]; const den=X[i]-X[i-j]; D[i][j]=num/den; }
+  const coef=Array(n).fill(0).map((_,i)=>D[i][i]); return {D,coef};
+}
+
+/* ===================== UI LAYER (preserva tu estilo) ==================== */
+const METHODS = {
+  root: {
+    'Bisection (a>b)': {
+      inputs: [
+        {id:'fx',  type:'fun', label:'f(x) =', hint:'e.g., x**3 - 4*x + 1'},
+        {id:'a',   type:'num', label:'a (left, greater)', def:'4'},
+        {id:'b',   type:'num', label:'b (right, smaller)', def:'-1'},
+        {id:'tol', type:'num', label:'tol', def:'1e-6'},
+        {id:'kmax',type:'num', label:'max iterations', def:'100'},
+      ],
+      prereq:'Need a>b and f(a)*f(b)<0. If no sign change, check the graph and pick another interval.',
+      run: () => {
+        const {src,f}=parseFun('fx'); const a=parseNum('a','a'), b=parseNum('b','b'),
+              tol=parseNum('tol'), k=parseNum('kmax');
+        const out=bisection(f,a,b,tol,k);
+        return { status:['ok','Bisection completed'], summary:`root ≈ ${fmt(out.root)}`, details:{iters:out.iters, fsrc:src, plot:(div)=>Plots.funcRoot(div,f,[b,a],out.root)} };
+      }
+    },
+    'Newton (root) x0=0 default': {
+      inputs: [
+        {id:'fx',  type:'fun', label:'f(x) =', hint:'e.g., x**3 - 4*x + 1'},
+        {id:'x0',  type:'num', label:'x0', def:'0'},
+        {id:'tol', type:'num', label:'tol', def:'1e-6'},
+        {id:'kmax',type:'num', label:'max iterations', def:'50'},
+      ],
+      prereq:'Derivative ≠ 0 near root. If derivative is tiny, try another x0 or inspect the graph.',
+      run: () => {
+        const {src,f}=parseFun('fx'); const x0=parseNum('x0'), tol=parseNum('tol'), k=parseNum('kmax');
+        const out=newtonRoot(f,x0,tol,k);
+        return { status:['ok','Newton completed'], summary:`root ≈ ${fmt(out.root)}`, details:{iters:out.iters, fsrc:src, plot:(div)=>Plots.funcRoot(div,f,[x0-5,x0+5],out.root)} };
+      }
+    }
+  },
+  matrix: {
+    'LU (Gaussian simple)': {
+      inputs:[ {id:'A',type:'mat',label:'A (rows by newline; cols by space/comma)'}, {id:'b',type:'vec',label:'b (vector)'} ],
+      prereq:'Square invertible A. Prints L and U as in course codes.',
+      run:()=>{ const A=parseMat('A','A'), b=parseVec('b','b'); if(A.length!==A[0].length) throw Error('A must be square'); const {L,U}=luSimple(A); const x=bwdSub(U,fwdSub(L,b)); return {status:['ok','LU (simple) completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; }
+    },
+    'LU (partial pivoting)': {
+      inputs:[ {id:'A',type:'mat',label:'A'}, {id:'b',type:'vec',label:'b'} ],
+      prereq:'Square invertible A. Shows L, U, P.',
+      run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U,P}=luPartialPivot(A); const x=bwdSub(U,fwdSub(L,matVec(P,b))); return {status:['ok','LU (partial pivot) completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U,P}, compare:true}}; }
+    },
+    'Crout':     { inputs:[{id:'A',type:'mat',label:'A'},{id:'b',type:'vec',label:'b'}], prereq:'L non-unit diag; U unit diag.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=crout(A); const x=bwdSub(U,fwdSub(L,b)); return {status:['ok','Crout completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Doolittle': { inputs:[{id:'A',type:'mat',label:'A'},{id:'b',type:'vec',label:'b'}], prereq:'L unit diag; U general.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=doolittle(A); const x=bwdSub(U,fwdSub(L,b)); return {status:['ok','Doolittle completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Cholesky (course variant)': { inputs:[{id:'A',type:'mat',label:'A (symmetric; SPD expected)'},{id:'b',type:'vec',label:'b'}], prereq:'Stops if a11=0 or non-positive pivot appears.', run:()=>{ const A=parseMat('A'), b=parseVec('b'); const {L,U}=choleskyCourse(A); const x=bwdSub(U,fwdSub(L,b)); return {status:['ok','Cholesky completed'], summary:`x = [${x.map(v=>fmt(v)).join(', ')}]`, details:{matrices:{L,U}, compare:true}}; } },
+    'Jacobi':    { inputs:[{id:'A',type:'mat',label:'A'},{id:'b',type:'vec',label:'b'},{id:'x0',type:'vec',label:'x0',def:'0 0 0 0'},{id:'tol',type:'num',label:'tol',def:'1e-7'},{id:'N',type:'num',label:'Nmax',def:'100'}], prereq:'Diagonal without zeros. Shows T, C, and ρ(T).', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N'); const out=jacobi(A,b,x0,tol,N); const note = out.rho>1 ? ['warn',`Jacobi ρ(T)=${fmt(out.rho,6)} > 1 (may diverge).`] : ['ok',`Jacobi ρ(T)=${fmt(out.rho,6)}`]; return {status:note, summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}}; } },
+    'Gauss-Seidel': { inputs:[{id:'A',type:'mat',label:'A'},{id:'b',type:'vec',label:'b'},{id:'x0',type:'vec',label:'x0',def:'0 0 0 0'},{id:'tol',type:'num',label:'tol',def:'1e-7'},{id:'N',type:'num',label:'Nmax',def:'100'}], prereq:'Diagonal without zeros. Shows T, C, and ρ(T).', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), tol=parseNum('tol'), N=parseNum('N'); const out=gaussSeidel(A,b,x0,tol,N); return {status:['ok',`Gauss-Seidel ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}}; } },
+    'SOR (w)':   { inputs:[{id:'A',type:'mat',label:'A'},{id:'b',type:'vec',label:'b'},{id:'x0',type:'vec',label:'x0',def:'0 0 0 0'},{id:'w',type:'num',label:'w (0<w<2)',def:'1.5'},{id:'tol',type:'num',label:'tol',def:'1e-7'},{id:'N',type:'num',label:'Nmax',def:'100'}], prereq:'Pick 0<w<2. Shows T, C, and ρ(T).', run:()=>{ const A=parseMat('A'), b=parseVec('b'), x0=parseVec('x0'), w=parseNum('w'), tol=parseNum('tol'), N=parseNum('N'); const out=sor(A,b,x0,w,tol,N); return {status:['ok',`SOR ρ(T)=${fmt(out.rho,6)}`], summary:`x ≈ [${out.x.map(v=>fmt(v)).join(', ')}]`, details:{iters:out.iters, matrices:{T:out.T,C:out.C}, series:out.iters.map(r=>r[1]), compare:true}}; } }
+  },
+  interp: {
+    'Vandermonde': { inputs:[{id:'xy',type:'pairs',label:'Table x;y per line (e.g., -1;15.5)'}], prereq:'Builds Vandermonde matrix and solves for coefficients.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const coef=vandermondeCoef(X,Y); return {status:['ok','Vandermonde completed'], summary:`coef = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{poly:coef, pts:{X,Y}}}; } },
+    'Newton (divided differences)': { inputs:[{id:'xy',type:'pairs',label:'Table x;y per line'}], prereq:'Shows divided-difference table and coefficients.', run:()=>{ const {X,Y}=UI.parsePairs('xy'); const {D,coef}=newtonDivDif(X,Y); return {status:['ok','Newton (divided differences) completed'], summary:`b = [${coef.map(c=>fmt(c)).join(', ')}]`, details:{D, pts:{X,Y}}}; } }
+  }
+};
+
+/* ===================== PLOTS ==================== */
+const Plots = {
+  funcRoot(div,f,range,root){
+    const [L,R]=range, a=Math.min(L,R), b=Math.max(L,R), xs=[], ys=[], n=200;
+    for(let i=0;i<=n;i++){ const x=a+(b-a)*i/n; xs.push(x); ys.push(f(x)); }
+    Plotly.newPlot(div,[
+      {x:xs,y:ys,type:'scatter',mode:'lines',name:'f(x)'},
+      {x:[root],y:[0],type:'scatter',mode:'markers+text', text:[`root=${fmt(root)}`], textposition:'top center', name:'root'},
+      {x:[a,b],y:[0,0],type:'scatter',mode:'lines',name:'x-axis',line:{dash:'dot'}}
+    ],{margin:{t:20},showlegend:false});
+  },
+  series(div,arr,title){
+    Plotly.newPlot(div,[{x:arr.map((_,i)=>i+1), y:arr, mode:'lines+markers+text', text:arr.map(v=>fmt(v,2)), textposition:'top center'}],
+      {margin:{t:20}, xaxis:{title:'k'}, yaxis:{title:'||e||'}, title});
+  },
+  scatterFit(div, pts){ const {X,Y}=pts;
+    Plotly.newPlot(div,[{x:X,y:Y,mode:'markers+text',type:'scatter',text:Y.map(v=>fmt(v,3)),textposition:'top center',name:'data'}],{margin:{t:20}});
+  }
+};
+
+/* ===================== UI WIRING (NO CAMBIA TU ESTILO) ==================== */
+const UI = {
+  init(){
+    // Wire buttons
+    document.getElementById('runBtn').addEventListener('click', ()=>UI.run());
+    document.getElementById('clearBtn').addEventListener('click', ()=>UI.clearAll());
+    const cat = document.getElementById('category');
+    const method = document.getElementById('method');
+    cat.addEventListener('change', ()=>UI.populateMethods());
+    method.addEventListener('change', ()=>UI.renderInputs());
+    UI.populateMethods();
+    UI.renderInputs();
+    History.render();
+    Guide.render();
+  },
+  populateMethods(){
+    const cat=document.getElementById('category').value;
+    const methodSel=document.getElementById('method');
+    methodSel.innerHTML='';
+    Object.keys(METHODS[cat]).forEach(k=>{
+      const o=document.createElement('option'); o.value=k; o.textContent=k; methodSel.appendChild(o);
+    });
+    UI.renderInputs();
+  },
+  renderInputs(){
+    const cat=document.getElementById('category').value;
+    const m=document.getElementById('method').value || Object.keys(METHODS[cat])[0];
+    document.getElementById('method').value=m;
+    const meta=METHODS[cat][m];
+    // prereqs
+    const pre=document.getElementById('prereq'); pre.textContent = meta.prereq || '';
+    // inputs
+    const box=document.getElementById('inputs'); box.innerHTML='';
+    (meta.inputs||[]).forEach(inp=>{
+      const wrap=document.createElement('div'); wrap.className='flex flex-col';
+      const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=inp.label; wrap.appendChild(lab);
+      let el;
+      if(inp.type==='fun'){ el=document.createElement('input'); el.placeholder=inp.hint||''; el.value=inp.def||''; }
+      else if(inp.type==='num'){ el=document.createElement('input'); el.value=inp.def||''; }
+      else if(inp.type==='vec'){ el=document.createElement('textarea'); el.rows=2; el.placeholder='e.g., 1 1 1'; el.value=inp.def||''; }
+      else if(inp.type==='mat'){ el=document.createElement('textarea'); el.rows=4; el.placeholder='e.g., 4 -1 0 3\n1 15.5 3 8\n0 -1.3 -4 1.1\n14 5 -2 30'; }
+      else if(inp.type==='pairs'){ el=document.createElement('textarea'); el.rows=4; el.placeholder='x;y per line (e.g., -1;15.5)'; }
+      el.id=inp.id; el.className='rounded-lg border p-2'; wrap.appendChild(el); box.appendChild(wrap);
+    });
+  },
+  parsePairs(id){
+    const raw=document.getElementById(id).value.trim(); if(!raw) throw Error('Table is empty');
+    const X=[], Y=[]; raw.split(/\n+/).forEach(line=>{
+      const parts=line.split(/[;,\s]+/).filter(Boolean).map(Number);
+      if(parts.length!==2 || parts.some(v=>!Number.isFinite(v))) throw Error('Each line must be x;y with numeric values');
+      X.push(parts[0]); Y.push(parts[1]);
+    });
+    return {X,Y};
+  },
+  status(kind,msg){
+    const colors = { ok:'bg-green-100 text-green-700 border-green-300', warn:'bg-amber-100 text-amber-700 border-amber-300', err:'bg-red-100 text-red-700 border-red-300' };
+    document.getElementById('status').innerHTML =
+      `<div class="border rounded-lg p-3 ${colors[kind]||colors.err}"><strong>${kind.toUpperCase()}</strong> — ${msg}</div>`;
+  },
+  clearAll(){
+    ['outputs','iters','plot','status'].forEach(id=>document.getElementById(id).innerHTML='');
+  },
+  run(){
+    try{
+      const ack = document.getElementById('ack'); if(ack && !ack.checked) throw Error('Please check the grammar/format acknowledgement box.');
+      const cat=document.getElementById('category').value;
+      const m=document.getElementById('method').value;
+      const meta=METHODS[cat][m];
+      const res=meta.run();
+
+      UI.status(res.status[0]==='ok'?'ok':res.status[0]==='warn'?'warn':'err', res.status[1]);
+
+      const out=document.getElementById('outputs'); out.innerHTML='';
+      // matrices
+      if(res.details?.matrices){ const mats=res.details.matrices;
+        for(const k in mats){ out.innerHTML += `<div><div class="font-semibold">${k}:</div><pre class="whitespace-pre">${fixedWidthMatrix(mats[k])}</pre></div>`; }
+      }
+      // f(x)
+      if(res.details?.fsrc){ out.innerHTML += `<div><span class="font-semibold">f(x):</span> <span>${res.details.fsrc}</span></div>`; }
+      // summary
+      out.innerHTML += `<div><span class="font-semibold">Summary:</span> ${res.summary}</div>`;
+
+      // comparación ref (solo matrices)
+      if(document.getElementById('compareRef')?.checked && cat==='matrix'){
+        const A=parseMat('A'), b=parseVec('b'); const xRef=solveRef(A,b);
+        out.innerHTML += `<div><span class="font-semibold">Reference (direct):</span> [${xRef.map(v=>fmt(v)).join(', ')}]</div>`;
+        const mRes = /x\s*=\s*\[(.*)\]/.exec(res.summary);
+        if(mRes){ const xs=mRes[1].split(',').map(s=>Number(s)); const diff = norm2(vecSub(xs,xRef))/Math.max(1e-12,norm2(xRef));
+          out.innerHTML += `<div><span class="font-semibold">Δ (relative norm):</span> ${fmt(diff,6)}</div>`;
+        }
+      }
+
+      // tabla de iteraciones (primeras 3 + últimas 3)
+      const it=document.getElementById('iters'); it.innerHTML='';
+      if(res.details?.iters?.length){
+        const rows=res.details.iters;
+        const head=`<tr class="text-left"><th class="p-1">k</th>${rows[0].slice(1).map((_,i)=>`<th class="p-1">c${i+1}</th>`).join('')}</tr>`;
+        const body=(arr)=>arr.map(r=>`<tr>${r.map((v,j)=>`<td class="p-1">${j===0?v:fmt(v)}</td>`).join('')}</tr>`).join('');
+        const first=rows.slice(0,3), last=rows.slice(-3);
+        const mid = rows.length>6 ? `<tr><td class="p-1 text-slate-400" colspan="${rows[0].length}">…</td></tr>` : '';
+        it.innerHTML = `<table class="w-full border-b">${head}${body(first)}${mid}${rows.length>3?body(last):''}</table>`;
+      }
+
+      // plots / panel
+      const p = document.getElementById('plot'); p.innerHTML='';
+      if(res.details?.plot){ res.details.plot('plot'); }
+      else if(cat==='matrix'){ if(res.details?.series){ Plots.series('plot', res.details.series, 'Residual norm per iteration'); } }
+
+      // history
+      History.add({time:Date.now(), cat, method:m, fun:res.details?.fsrc||null, summary:res.summary}); History.render();
+      Guide.render();
+    }catch(e){
+      if(e instanceof Recommendation) UI.status('warn', e.message);
+      else UI.status('err', e.message);
+    }
+  }
+};
+
+/* ===================== HISTORY & GUIDE ==================== */
+const History = {
+  key:'nmh.history',
+  add(item){ const arr=this.get(); arr.unshift(item); localStorage.setItem(this.key, JSON.stringify(arr.slice(0,30))); },
+  get(){ try{ return JSON.parse(localStorage.getItem(this.key)||'[]'); }catch{return []} },
+  clear(){ localStorage.removeItem(this.key); this.render(); },
+  render(){
+    const arr=this.get();
+    document.getElementById('history').innerHTML = arr.length
+      ? arr.map(h=>`
+        <div class="flex items-center justify-between border-b py-2">
+          <div>
+            <div class="font-semibold">${new Date(h.time).toLocaleString()}</div>
+            <div class="text-sm">${h.cat} • ${h.method}${h.fun? ` • f(x)=${h.fun}`:''}</div>
+            <div class="text-sm text-slate-600">${h.summary}</div>
+          </div>
+        </div>`).join('')
+      : '<div class="text-sm text-slate-600">No runs yet.</div>';
+  }
+};
+document.getElementById('clearHistory')?.addEventListener('click', ()=>History.clear());
+
+const Guide = {
+  render(){
+    const cat=document.getElementById('category').value, m=document.getElementById('method').value;
+    const L = {
+      'Bisection (a>b)':[ 'Input: f(x), a>b, b right endpoint.',
+                         'Require: f(a)*f(b) < 0.',
+                         'Stop: |b-a| ≤ tol or |f(m)| ≤ tol.',
+                         'Tip: If no sign change, inspect the plot and pick an interval crossing the x-axis.' ],
+      'Newton (root) x0=0 default':[ 'Input: f(x), x0.',
+                         'Derivative must not be near 0.',
+                         'Default x0=0; if it stalls, try another x0 near a visible root.' ],
+      'LU (Gaussian simple)':[ 'Input: A square, b. Prints L and U, then solves.' ],
+      'LU (partial pivoting)':[ 'Input: A square, b. Shows L,U,P; robust with zero pivots.' ],
+      'Crout':[ 'Input: A square, b. L non-unit diag; U unit diag.' ],
+      'Doolittle':[ 'Input: A square, b. L unit diag; U general.' ],
+      'Cholesky (course variant)':[ 'Input: symmetric A, b. Stops if a11=0 or non-positive pivot.' ],
+      'Jacobi':[ 'Input: A,b,x0,tol,N. No zeros on diagonal. Shows T,C and ρ(T).' ],
+      'Gauss-Seidel':[ 'Input: A,b,x0,tol,N. Shows T,C and ρ(T).' ],
+      'SOR (w)':[ 'Input: A,b,x0,w,tol,N with 0<w<2. Shows T,C and ρ(T).' ],
+      'Vandermonde':[ 'Input: table (x;y). Returns polynomial coefficients.' ],
+      'Newton (divided differences)':[ 'Input: table (x;y). Shows divided-difference table and coeffs.' ],
+    }[m] || [];
+    document.getElementById('guide').innerHTML = L.map(s=>`<div>• ${s}</div>`).join('');
+  }
+};
+
+/* ===================== BOOT (after Plotly ready) ==================== */
+function boot(){ UI.init(); }
+</script>
+
   body{background:#fafafa;color:#0f172a}
   .badge{display:inline-flex;align-items:center;gap:.5rem;padding:.25rem .6rem;border-radius:.6rem;font-weight:600}
   .badge-ok{background:color-mix(in srgb,var(--ok) 18%, white); color:var(--ok); border:1px solid color-mix(in srgb,var(--ok) 40%, white)}

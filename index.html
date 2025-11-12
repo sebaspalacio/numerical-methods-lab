@@ -29,6 +29,14 @@
     .table-sm td,.table-sm th{padding:.35rem .5rem;border-bottom:1px solid var(--line);}
     .tabset button{padding:.35rem .7rem;border:1px solid var(--line);border-radius:.5rem;margin-right:.5rem;}
     .tabset .on{background:#e5edff;color:#1d4ed8;border-color:#c7d2fe;}
+    .guide-card{background:#eef2ff;border:1px solid #c7d2fe;border-radius:1rem;padding:1.25rem;min-height:180px;display:flex;flex-direction:column;justify-content:center;}
+    .guide-card h4{font-size:1.05rem;margin-bottom:.35rem;}
+    .help-pane{background:#f8fafc;border:1px solid var(--line);border-radius:1rem;padding:1.25rem;width:100%;max-width:320px;box-shadow:0 12px 32px -24px rgba(15,23,42,.6);}
+    .help-details{border:1px solid var(--line);border-radius:.75rem;padding:.6rem .8rem;background:#fff;}
+    .help-details summary{cursor:pointer;font-weight:600;color:var(--blue);list-style:none;}
+    .help-details summary::-webkit-details-marker{display:none;}
+    .help-details[open]{border-color:#c7d2fe;background:#eef2ff55;}
+    .help-body{margin-top:.45rem;font-size:.85rem;color:var(--muted);line-height:1.4;}
   </style>
 </head>
 <body>
@@ -36,24 +44,6 @@
     <h1 class="text-3xl font-bold">Numerical Methods Lab</h1>
     <p class="text-slate-600">Root Finding • Direct / Iterative Linear Systems • Interpolation</p>
   </header>
-
-  <!-- Quick guide (top) -->
-  <section class="mx-auto max-w-6xl px-4 card mb-4" id="quickTop">
-    <h3 class="text-lg font-semibold mb-2">Quick guide</h3>
-    <ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">
-      <li><b>Functions:</b> enter <span class="code">x**3 - 7*x + 6</span> (it also accepts <span class="code">x^3</span>). Use <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span>, <span class="code">PI</span>.</li>
-      <li><b>Intervals:</b> you can provide <span class="code">a</span> and <span class="code">b</span> in any order; the system uses <span class="code">[min(a,b), max(a,b)]</span>.</li>
-      <li><b>Vectors:</b> separate values with a space or newline, for example <span class="code">1 2 3</span>.</li>
-      <li><b>Matrices (paste):</b> place rows on separate lines with columns separated by space or comma. Example:
-        <pre class="code mt-1">4 -1 0 3
-1 15.5 3 8
-0 -1.3 -4 1.1
-14 5 -2 30</pre>
-      </li>
-      <li><b>Matrices (build):</b> choose rows/columns and edit each cell; the "Paste/Build" area stays synchronized.</li>
-      <li>Messages appear as <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recommendation</span> or <span class="badge badge-err">ERR</span>.</li>
-    </ul>
-  </section>
 
   <main class="mx-auto max-w-6xl px-4 pb-24">
 
@@ -69,25 +59,63 @@
 
     <!-- Method selector -->
     <section class="card mb-6">
-      <div class="grid-3">
-        <div>
-          <label class="block text-sm font-semibold mb-1">Method</label>
-          <select id="method" class="w-full rounded-lg border p-2"></select>
-        </div>
-        <div>
-          <label class="block text-sm font-semibold mb-1">Quick actions</label>
-          <div class="flex gap-2">
-            <button id="runBtn" class="btn btn-primary" type="button">Run</button>
-            <button id="clearBtn" class="btn btn-ghost" type="button">Clear</button>
+      <div class="flex flex-col gap-6 lg:flex-row">
+        <div class="flex-1 space-y-4">
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Method</label>
+              <select id="method" class="w-full rounded-lg border p-2"></select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Acciones rápidas</label>
+              <div class="flex flex-wrap gap-2">
+                <button id="runBtn" class="btn btn-primary" type="button">Run</button>
+                <button id="clearBtn" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+            </div>
+            <div class="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-600">
+              Selecciona un método para ver recomendaciones personalizadas y los pasos sugeridos.
+            </div>
           </div>
+          <div id="methodGuide" class="guide-card"></div>
         </div>
-        <div class="flex items-end justify-end">
-          <div class="text-sm text-slate-600">
-            Hints adapt to the selected method below.
+        <aside class="help-pane">
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500">Ayuda para tus datos</h3>
+          <p class="text-sm text-slate-600 mt-1">Expande una sección para recordar cómo escribir tus entradas.</p>
+          <div class="mt-3 space-y-2">
+            <details class="help-details" open>
+              <summary>Funciones</summary>
+              <div class="help-body">
+                Escribe expresiones como <span class="code">x**3 - 7*x + 6</span> o <span class="code">x^3</span> (se convierte a <span class="code">**</span>). Están disponibles <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span> y <span class="code">PI</span>.
+              </div>
+            </details>
+            <details class="help-details">
+              <summary>Intervalos y números</summary>
+              <div class="help-body">
+                Usa cualquier orden para <span class="code">a</span> y <span class="code">b</span>; el sistema emplea <span class="code">[min(a,b), max(a,b)]</span>. Los números aceptan notación científica (<span class="code">1e-6</span>).
+              </div>
+            </details>
+            <details class="help-details">
+              <summary>Vectores</summary>
+              <div class="help-body">
+                Separa componentes por espacios o saltos de línea, por ejemplo <span class="code">1 2 3</span>. Ajusta el tamaño según tu sistema.
+              </div>
+            </details>
+            <details class="help-details">
+              <summary>Matrices</summary>
+              <div class="help-body">
+                Puedes pegar filas usando espacios o comas (<span class="code">4 -1 0</span>). Con "Build" elige filas/columnas y edita cada celda; la vista de texto se mantiene sincronizada.
+              </div>
+            </details>
+            <details class="help-details">
+              <summary>Mensajes del sistema</summary>
+              <div class="help-body">
+                Las alertas aparecen como <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recomendación</span> o <span class="badge badge-err">Error</span> para guiarte durante la ejecución.
+              </div>
+            </details>
           </div>
-        </div>
+        </aside>
       </div>
-      <div id="prereq" class="text-sm text-slate-700 mt-3"></div>
     </section>
 
     <!-- Inputs & Status/Chart -->
@@ -472,6 +500,229 @@
 
   const METHODS_BY_WS={root:METHODS_ROOT,direct:METHODS_DIRECT,iter:METHODS_ITER,interp:METHODS_INTERP};
 
+  const METHOD_GUIDES={
+    incremental:{
+      title:'Búsqueda incremental',
+      summary:'Explora f(x) desde el punto inicial a con saltos de tamaño Δ hasta encontrar un cambio de signo.',
+      checklist:[
+        'Completa f(x), el punto inicial a, el paso Δ y el número máximo de pasos.',
+        'El signo de Δ define la dirección; aumenta «Max steps» para cubrir un intervalo mayor.'
+      ],
+      reminders:[
+        'Si no aparece un cambio de signo, ajusta Δ o mueve el punto inicial.'
+      ]
+    },
+    bisection:{
+      title:'Bisección',
+      summary:'Reduce el intervalo dividiéndolo por la mitad mientras se mantenga el cambio de signo en los extremos.',
+      checklist:[
+        'Proporciona f(x), los extremos a y b (en cualquier orden), la tolerancia y el máximo de iteraciones.',
+        'Comprueba antes de ejecutar que f(a) y f(b) tengan signos opuestos.'
+      ],
+      reminders:[
+        'Si no hay cambio de signo, ubica un nuevo intervalo o usa búsqueda incremental.'
+      ]
+    },
+    falsePosition:{
+      title:'Falsa posición',
+      summary:'Calcula secantes sucesivas utilizando siempre los extremos del intervalo para aproximar la raíz.',
+      checklist:[
+        'Indica f(x), el intervalo [a,b], la tolerancia y el máximo de iteraciones.',
+        'Úsala cuando ya conoces un intervalo con cambio de signo y buscas convergencia más rápida que la bisección.'
+      ],
+      reminders:[
+        'Si las iteraciones se estancan en un extremo, ajusta el intervalo o cambia al método de la secante.'
+      ]
+    },
+    fixedPoint:{
+      title:'Punto fijo',
+      summary:'Itera xₖ₊₁ = g(xₖ) dentro de un intervalo estable para localizar un punto fijo donde f(x)=0.',
+      checklist:[
+        'Ingresa f(x), g(x), el intervalo [a,b], la semilla x₀, la tolerancia y el máximo de iteraciones.',
+        'Verifica que g(x) mantenga las iteraciones dentro del intervalo elegido.'
+      ],
+      reminders:[
+        'Si la iteración se sale de rango, ajusta g(x), la semilla o acota mejor el intervalo.'
+      ]
+    },
+    newton:{
+      title:'Newton-Raphson',
+      summary:'Aprovecha la derivada de f(x) para alcanzar convergencia cuadrática cerca de la raíz.',
+      checklist:[
+        'Define f(x), el valor inicial x₀, la tolerancia y el número máximo de iteraciones.',
+        'Escoge x₀ cercano a la raíz y evita zonas donde fʼ(x)≈0.'
+      ],
+      reminders:[
+        'Si el denominador se acerca a cero, cambia la semilla o prueba con la secante.'
+      ]
+    },
+    secant:{
+      title:'Secante',
+      summary:'Aproxima la derivada con dos evaluaciones consecutivas sin calcular fʼ(x) explícitamente.',
+      checklist:[
+        'Proporciona f(x), un intervalo de referencia [a,b], las semillas x₀ y x₁, la tolerancia y el máximo de iteraciones.',
+        'Comprueba que los nuevos puntos permanezcan en el intervalo definido.'
+      ],
+      reminders:[
+        'Si el método sale del intervalo o el denominador es pequeño, reajusta las semillas.'
+      ]
+    },
+    luSimple:{
+      title:'LU sin pivoteo',
+      summary:'Factoriza A≈LU directamente para resolver Ly=b y luego Ux=y.',
+      checklist:[
+        'Ingresa una matriz cuadrada A y el vector b asociado.',
+        'Adecuado para matrices bien condicionadas sin ceros en pivotes.'
+      ],
+      reminders:[
+        'Si surge un pivote cercano a cero, cambia al método con pivoteo parcial.'
+      ]
+    },
+    luPP:{
+      title:'LU con pivoteo parcial',
+      summary:'Intercambia filas cuando es necesario para obtener una factorización LU más estable.',
+      checklist:[
+        'Usa una matriz cuadrada A y el vector b; la matriz P registra los intercambios.',
+        'Ideal cuando la diagonal de A contiene valores pequeños o nulos.'
+      ],
+      reminders:[
+        'Consulta la matriz P para entender el reordenamiento aplicado.'
+      ]
+    },
+    crout:{
+      title:'Crout',
+      summary:'Genera L con diagonal libre y U con unos para resolver el sistema en dos pasos.',
+      checklist:[
+        'Introduce la matriz cuadrada A y el vector b a resolver.',
+        'Útil cuando buscas que L conserve la escala de los pivotes.'
+      ],
+      reminders:[
+        'Revisa que ningún pivote diagonal sea cero antes de continuar.'
+      ]
+    },
+    doolittle:{
+      title:'Doolittle',
+      summary:'Construye L con unos en la diagonal superior y U general.',
+      checklist:[
+        'Ingresa la matriz cuadrada A y el vector b correspondiente.',
+        'Comparte estructura con Crout pero normaliza la diagonal de L a uno.'
+      ],
+      reminders:[
+        'Si aparecen pivotes nulos, considera aplicar pivoteo parcial.'
+      ]
+    },
+    choleskyCourse:{
+      title:'Cholesky',
+      summary:'Descompone matrices simétricas definidas positivas en el producto L·U.',
+      checklist:[
+        'Proporciona una matriz simétrica (SPD) A y el vector b.',
+        'Ideal para sistemas SPD; se detiene si detecta un pivote no positivo.'
+      ],
+      reminders:[
+        'Si falla, verifica la simetría y positividad de A antes de reintentar.'
+      ]
+    },
+    jacobi:{
+      title:'Jacobi',
+      summary:'Actualiza todas las variables en paralelo usando la iteración anterior completa.',
+      checklist:[
+        'Indica A, b, el vector inicial x₀, la tolerancia y Nmax.',
+        'Asegúrate de que la diagonal de A no tenga ceros y observa ρ(T) para evaluar convergencia.'
+      ],
+      reminders:[
+        'Si ρ(T)≥1, reordena el sistema o cambia de método iterativo.'
+      ]
+    },
+    gs:{
+      title:'Gauss-Seidel',
+      summary:'Reutiliza los valores recién actualizados para acelerar la convergencia respecto a Jacobi.',
+      checklist:[
+        'Ingresa A, b, el vector inicial x₀, la tolerancia y Nmax.',
+        'Funciona mejor con matrices diagonalmente dominantes; revisa ρ(T).' 
+      ],
+      reminders:[
+        'Si diverge, intenta reordenar filas o cambia a SOR con un ω apropiado.'
+      ]
+    },
+    sor:{
+      title:'SOR',
+      summary:'Introduce un factor de relajación ω para mejorar la velocidad de Gauss-Seidel.',
+      checklist:[
+        'Define A, b, el vector inicial x₀, el parámetro ω (0<ω<2), la tolerancia y Nmax.',
+        'Comienza con ω≈1 y ajusta según el ritmo de convergencia.'
+      ],
+      reminders:[
+        'Un ω fuera de rango genera error; si ρ(T) es grande, prueba otro ω.'
+      ]
+    },
+    vandermonde:{
+      title:'Vandermonde',
+      summary:'Obtiene los coeficientes del polinomio interpolante resolviendo el sistema de Vandermonde.',
+      checklist:[
+        'Introduce pares x;y (uno por línea) para formar la matriz.',
+        'Adecuado para pocos puntos; puede volverse inestable con conjuntos grandes.'
+      ],
+      reminders:[
+        'Ordena los puntos por x para interpretar mejor el polinomio obtenido.'
+      ]
+    },
+    newtonDD:{
+      title:'Newton (diferencias divididas)',
+      summary:'Construye la tabla de diferencias divididas y la forma de Newton del polinomio.',
+      checklist:[
+        'Ingresa pares x;y ordenados; se genera la tabla triangular automáticamente.',
+        'Permite añadir nuevos puntos reutilizando resultados previos.'
+      ],
+      reminders:[
+        'Evita repetir valores de x para impedir divisiones por cero.'
+      ]
+    },
+    lagrange:{
+      title:'Lagrange',
+      summary:'Suma las bases Lᵢ(x) ponderadas para construir el polinomio interpolante.',
+      checklist:[
+        'Escribe los pares x;y; se calcularán las bases y los coeficientes finales.',
+        'Facilita evaluar P(x) en cualquier punto sin resolver sistemas adicionales.'
+      ],
+      reminders:[
+        'Con muchos puntos, los polinomios pueden oscilar (fenómeno de Runge).' 
+      ]
+    },
+    splLin:{
+      title:'Splines lineales',
+      summary:'Conecta cada par de nodos con segmentos rectos continuos.',
+      checklist:[
+        'Ingresa pares x;y con x en orden creciente.',
+        'Ideal para aproximaciones rápidas sin oscilaciones.'
+      ],
+      reminders:[
+        'Añade más nodos si necesitas capturar más curvatura.'
+      ]
+    },
+    splQuad:{
+      title:'Splines cuadráticos',
+      summary:'Genera tramos cuadráticos con continuidad en valor y primera derivada.',
+      checklist:[
+        'Indica pares x;y; se fija una condición inicial para cerrar el sistema.',
+        'Brinda suavidad adicional frente a los splines lineales.'
+      ],
+      reminders:[
+        'Asegúrate de que los valores de x sean distintos para cada punto.'
+      ]
+    },
+    splCub:{
+      title:'Splines cúbicos naturales',
+      summary:'Produce una interpolación suave con derivadas segunda nulas en los extremos.',
+      checklist:[
+        'Introduce pares x;y ordenados para resolver el sistema tridiagonal.',
+        'Garantiza continuidad en valor, primera y segunda derivada.'
+      ],
+      reminders:[
+        'Si prefieres otras condiciones de borde, considera otro tipo de spline.'
+      ]
+    }
+  };
+
   /* ============ UI ============ */
   const els={
     tabRoot:document.getElementById('tabRoot'),
@@ -481,7 +732,7 @@
     method:document.getElementById('method'),
     runBtn:document.getElementById('runBtn'),
     clearBtn:document.getElementById('clearBtn'),
-    prereq:document.getElementById('prereq'),
+    methodGuide:document.getElementById('methodGuide'),
     inputs:document.getElementById('inputs'),
     status:document.getElementById('status'),
     plot:document.getElementById('plot'),
@@ -505,7 +756,6 @@
     window.WS = ws;
     populateMethods();
     clearPanels();
-    renderGuide();
   }
   function populateMethods(){
     const sel=els.method; sel.innerHTML='';
@@ -514,6 +764,7 @@
       const o=document.createElement('option'); o.value=dict[name].id; o.textContent=name; sel.appendChild(o);
     });
     renderInputs();
+    renderGuide();
   }
 
   function renderInputs(){
@@ -521,7 +772,6 @@
     const id  = els.method.value || Object.values(dict)[0].id;
     const meta=Object.values(dict).find(m=>m.id===id) || Object.values(dict)[0];
     els.method.value=meta.id;
-    els.prereq.textContent=meta.prereq||'';
     const box=els.inputs; box.innerHTML='';
 
     (meta.inputs||[]).forEach(inp=>{
@@ -547,34 +797,34 @@
 
   function renderGuide(){
     const id = els.method.value;
-    const g = {
-      incremental:['Input: f(x), a, Δ, steps','Scan from a using Δ to locate sign change.'],
-      bisection:['Input: f(x), a, b, tol, kmax','Requires sign change; halves the interval each step.'],
-      falsePosition:['Input: f(x), a, b, tol, kmax','Secant on endpoints; may stick to one side.'],
-      fixedPoint:['Input: f(x), g(x), a, b, x0, tol, kmax','Prefer contractive g and invariant interval.'],
-      newton:['Input: f(x), x0, tol, kmax','Quadratic near the root; avoid f\'≈0.'],
-      secant:['Input: f(x), a, b, x0, x1, tol, kmax','No derivative; choose seeds carefully.'],
-      luSimple:['Input: A square, b','Factor A≈LU; then Ly=b, Ux=y.'],
-      luPP:['Input: A square, b','Like LU, but swaps rows for stability.'],
-      crout:['Input: A square, b','L has general diagonal; U has ones.'],
-      doolittle:['Input: A square, b','L has ones; U general.'],
-      choleskyCourse:['Input: symmetric A, b','Requires positive pivots (SPD).'],
-      jacobi:['Input: A,b,x0,tol,N','Parallel-friendly iteration; shows ρ(T).'],
-      gs:['Input: A,b,x0,tol,N','Uses latest values; usually faster than Jacobi.'],
-      sor:['Input: A,b,x0,w,tol,N','Over-relaxation; pick 0<w<2.'],
-      vandermonde:['Input: x;y table','Builds Vandermonde & solves for coefficients.'],
-      newtonDD:['Input: x;y table','Divided-difference table & Newton form.'],
-      lagrange:['Input: x;y table','Adds basis L_i to form P(x).'],
-      splLin:['Input: x;y table (x increasing)','Piecewise linear across nodes.'],
-      splQuad:['Input: x;y table','Quadratic pieces with C1 continuity.'],
-      splCub:['Input: x;y table','Natural cubic: S""(x0)=S""(xn)=0.']
-    };
-    els.prereq.innerHTML = (g[id]||[]).map(s=>'<div>• '+s+'</div>').join('');
+    const info = METHOD_GUIDES[id];
+    if(!info){
+      els.methodGuide.innerHTML = '<div class="text-sm text-slate-600">Selecciona un método para ver las sugerencias específicas.</div>';
+      return;
+    }
+    const checklist = info.checklist?.length
+      ? '<div><h5 class="text-sm font-semibold text-slate-700">Para empezar</h5><ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">'+info.checklist.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
+      : '';
+    const reminders = info.reminders?.length
+      ? '<div class="pt-2 border-t border-blue-100 mt-2"><h5 class="text-sm font-semibold text-slate-700">Consejos rápidos</h5><ul class="list-disc pl-5 text-sm text-slate-600 space-y-1 mt-1">'+info.reminders.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
+      : '';
+    els.methodGuide.innerHTML = `
+      <div class="space-y-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Guía del método</p>
+          <h4 class="font-semibold text-slate-900">${info.title}</h4>
+          <p class="text-sm text-slate-600 mt-1">${info.summary}</p>
+        </div>
+        ${checklist}
+        ${reminders}
+      </div>
+    `;
   }
 
   /* ============ Run & History ============ */
   document.getElementById('runBtn').addEventListener('click', run);
   document.getElementById('clearBtn').addEventListener('click', ()=>clearPanels());
+  els.method.addEventListener('change', ()=>{ renderInputs(); renderGuide(); clearPanels(); });
 
   function run(){
     try{

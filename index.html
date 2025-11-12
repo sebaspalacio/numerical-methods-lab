@@ -37,21 +37,21 @@
     <p class="text-slate-600">Root Finding • Direct / Iterative Linear Systems • Interpolation</p>
   </header>
 
-  <!-- Quick guide (arriba) -->
+  <!-- Quick guide (top) -->
   <section class="mx-auto max-w-6xl px-4 card mb-4" id="quickTop">
     <h3 class="text-lg font-semibold mb-2">Quick guide</h3>
     <ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">
-      <li><b>Functions:</b> escribe <span class="code">x**3 - 7*x + 6</span> (también acepta <span class="code">x^3</span>). Usa <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span>, <span class="code">PI</span>.</li>
-      <li><b>Intervals:</b> puedes dar <span class="code">a</span> y <span class="code">b</span> en cualquier orden; el sistema usa <span class="code">[min(a,b), max(a,b)]</span>.</li>
-      <li><b>Vectors:</b> separa con espacio o nueva línea, por ejemplo <span class="code">1 2 3</span>.</li>
-      <li><b>Matrices (pegar):</b> filas por línea, columnas separadas por espacio o coma. Ejemplo:
+      <li><b>Functions:</b> enter <span class="code">x**3 - 7*x + 6</span> (it also accepts <span class="code">x^3</span>). Use <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span>, <span class="code">PI</span>.</li>
+      <li><b>Intervals:</b> you can provide <span class="code">a</span> and <span class="code">b</span> in any order; the system uses <span class="code">[min(a,b), max(a,b)]</span>.</li>
+      <li><b>Vectors:</b> separate values with a space or newline, for example <span class="code">1 2 3</span>.</li>
+      <li><b>Matrices (paste):</b> place rows on separate lines with columns separated by space or comma. Example:
         <pre class="code mt-1">4 -1 0 3
 1 15.5 3 8
 0 -1.3 -4 1.1
 14 5 -2 30</pre>
       </li>
-      <li><b>Matrices (construir):</b> elige filas/columnas y edita cada celda; el área “Pegar/Construir” se mantiene sincronizada.</li>
-      <li>Los mensajes se muestran como <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recommendation</span> o <span class="badge badge-err">ERR</span>.</li>
+      <li><b>Matrices (build):</b> choose rows/columns and edit each cell; the "Paste/Build" area stays synchronized.</li>
+      <li>Messages appear as <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recommendation</span> or <span class="badge badge-err">ERR</span>.</li>
     </ul>
   </section>
 
@@ -386,7 +386,7 @@
     }
   };
 
-  /* Matrix input (pegar o construir) */
+  /* Matrix input (paste or build) */
   function renderMatrixWidget(targetId,labelText,defText=''){
     const wrap=document.createElement('div');
     const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=labelText; wrap.appendChild(lab);

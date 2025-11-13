@@ -1,0 +1,13 @@
+{
+  "name": "numerical-methods-lab",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "serve": "http-server -p 8080",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "http-server": "^14.1.1"
+  }
+}

@@ -192,702 +192,357 @@ function splineLineal(X,Y){const n=X.length,m=2*(n-1),A=zeros(m,m),b=Array(m).fi
 function splineCuadratico(X,Y){const n=X.length,m=3*(n-1),A=zeros(m,m),b=Array(m).fill(0);let row=0;A[row][0]=1;b[row]=0;row++;A[row][0]=X[0]**2;A[row][1]=X[0];A[row][2]=1;b[row]=Y[0];row++;const s0=(Y[1]-Y[0])/(X[1]-X[0]);A[row][0]=2*X[0];A[row][1]=1;A[row][2]=0;b[row]=s0;row++;for(let i=0;i<n-1;i++){const base=3*i;A[row][base]=X[i]**2;A[row][base+1]=X[i];A[row][base+2]=1;b[row]=Y[i];row++;A[row][base]=X[i+1]**2;A[row][base+1]=X[i+1];A[row][base+2]=1;b[row]=Y[i+1];row++;}for(let i=1;i<n-1;i++){const left=3*(i-1),right=3*i;A[row][left]=2*X[i];A[row][left+1]=1;A[row][right]+= -2*X[i];A[row][right+1]+= -1;b[row]=0;row++;}const Ared=A.slice(0,m).map(r=>r.slice(0,m)),bred=b.slice(0,m);const c=solveRef(Ared,bred);const S=[];for(let i=0;i<n-1;i++){const a=c[3*i],d=c[3*i+1],e=c[3*i+2];S.push([a,d,e]);}return S;}
 function splineCubico(X,Y){const n=X.length,h=[],alpha=Array(n).fill(0);for(let i=0;i<n-1;i++)h[i]=X[i+1]-X[i];for(let i=1;i<n-1;i++)alpha[i]=3*((Y[i+1]-Y[i])/h[i]-(Y[i]-Y[i-1])/h[i-1]);const l=Array(n).fill(0),mu=Array(n).fill(0),z=Array(n).fill(0);l[0]=1;mu[0]=0;z[0]=0;for(let i=1;i<n-1;i++){l[i]=2*(X[i+1]-X[i-1])-h[i-1]*mu[i-1];mu[i]=h[i]/l[i];z[i]=(alpha[i]-h[i-1]*z[i-1])/l[i];}l[n-1]=1;z[n-1]=0;const c=Array(n).fill(0),bcoef=Array(n-1).fill(0),dcoef=Array(n-1).fill(0);for(let j=n-2;j>=0;j--){c[j]=z[j]-mu[j]*c[j+1];bcoef[j]=(Y[j+1]-Y[j])/h[j]-h[j]*(c[j+1]+2*c[j])/3;dcoef[j]=(c[j+1]-c[j])/(3*h[j]);}const S=[];for(let i=0;i<n-1;i++){const A=dcoef[i],B=c[i]-3*dcoef[i]*X[i],C=bcoef[i]-2*c[i]*X[i]+3*dcoef[i]*X[i]*X[i],D=Y[i]-bcoef[i]*X[i]+c[i]*X[i]*X[i]-dcoef[i]*X[i]*X[i]*X[i];S.push([A,B,C,D]);}return S;}
 
-/* ============ Workspaces & Methods ============ */
-const METHODS_ROOT=mapRegistry({
-  'Incremental Search':{
-    id:'incremental',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',hint:'e.g., x**3 - 7*x + 6',def:'x**3 - 7*x + 6'},
-      {id:'a',label:'a (interval)',type:'num',def:'3'},
-      {id:'delta',label:'Δ (step)',type:'num',def:'-0.5'},
-      {id:'nmax',label:'Max steps',type:'num',def:'100'}
+/* ============ UI bootstrap ============ */
+(function UI() {
+  // Map methods to workspaces with lightweight metadata describing inputs.
+  const REGISTRY = {
+    root: [
+      { id:'INC',  name:'Incremental Search',  inputs:['fx','a','delta','nmax'] },
+      { id:'BISE', name:'Bisection',           inputs:['fx','a','b','tol','imax'] },
+      { id:'FALS', name:'False Position',      inputs:['fx','a','b','tol','imax'] },
+      { id:'FIXP', name:'Fixed Point',         inputs:['fx','gx','a','b','x0','tol','imax'] },
+      { id:'NEWT', name:'Newton',              inputs:['fx','x0','tol','imax'] },
+      { id:'SECA', name:'Secant',              inputs:['fx','a','b','x0','x1','tol','imax'] },
     ],
-    prereq:'Scans from a with step Δ to locate a sign change.',
-    run:()=>{
-      const {src,f}=parseFun('fx'); const a=parseNum('a'), d=parseNum('delta'), n=parseNum('nmax');
-      const {bracket,msg}=incSearch(f,a,d,n);
-      if(!bracket) throw new Recommendation(msg+' Try another Δ or start point.');
-      return {
-        status:['ok','Bracket found'],
-        summary:{'Suggested interval':`[${fmt(bracket[0])}, ${fmt(bracket[1])}]`,'Note':msg},
-        details:{fsrc:src, plot:(div)=>Plots.func(div,f,bracket,[bracket[0],bracket[1]])}
-      };
-    }
-  },
-  'Bisection':{
-    id:'bisection',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',def:'x**3 - 7*x + 6'},
-      {id:'a',label:'a',type:'num',def:'3'},
-      {id:'b',label:'b',type:'num',def:'0.5'},
-      {id:'tol',label:'tol',type:'num',def:'1e-6'},
-      {id:'kmax',label:'max iterations',type:'num',def:'100'}
+    direct: [
+      { id:'LUS',  name:'LU (simple)',         inputs:['A','b'] },
+      { id:'LUP',  name:'LU (partial pivot)',  inputs:['A','b'] },
+      { id:'CROT', name:'Crout',               inputs:['A','b'] },
+      { id:'DOOL', name:'Doolittle',           inputs:['A','b'] },
+      { id:'CHOL', name:'Cholesky (course)',   inputs:['A','b'] },
     ],
-    prereq:'Requires sign change on [min(a,b), max(a,b)].',
-    run:()=>{const {src,f}=parseFun('fx');const a=parseNum('a'),b=parseNum('b'),tol=parseNum('tol'),k=parseNum('kmax');const out=bisection(f,a,b,tol,k);return {status:['ok','Bisection completed'], summary:{'Root':fmt(out.root),'Iterations':out.iters.length,'Final range':`[${fmt(out.range[0])}, ${fmt(out.range[1])}]`}, details:{iters:{headers:['k','L','R','mid','f(L)','f(R)','f(mid)','error'],rows:out.iters},fsrc:src, plot:(div)=>Plots.func(div,f,[Math.min(a,b),Math.max(a,b)],[out.root])}};}
-  },
-  'False Position':{
-    id:'falsePosition',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',def:'x**3 - 7*x + 6'},
-      {id:'a',label:'a',type:'num',def:'3'},
-      {id:'b',label:'b',type:'num',def:'0.5'},
-      {id:'tol',label:'tol',type:'num',def:'1e-6'},
-      {id:'kmax',label:'max iterations',type:'num',def:'100'}
+    iter: [
+      { id:'JACO', name:'Jacobi',              inputs:['A','b','x0','tol','imax'] },
+      { id:'GS',   name:'Gauss–Seidel',        inputs:['A','b','x0','tol','imax'] },
+      { id:'SOR',  name:'SOR',                 inputs:['A','b','x0','w','tol','imax'] },
     ],
-    prereq:'Requires sign change on [a,b].',
-    run:()=>{const {src,f}=parseFun('fx');const a=parseNum('a'),b=parseNum('b'),tol=parseNum('tol'),k=parseNum('kmax');const out=falsePosition(f,a,b,tol,k);return {status:['ok','False Position completed'], summary:{'Root':fmt(out.root),'Iterations':out.iters.length}, details:{iters:{headers:['k','L','R','x','f(L)','f(R)','f(x)','|b-a|'],rows:out.iters},fsrc:src, plot:(div)=>Plots.func(div,f,[Math.min(a,b),Math.max(a,b)],[out.root])}};}
-  },
-  'Fixed Point':{
-    id:'fixedPoint',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',def:'x**3 - 7*x + 6'},
-      {id:'gx',label:'g(x) =',type:'fun',hint:'e.g., (x + (7*x - 6)/3)/2',def:'(x + (7*x - 6)/3)/2'},
-      {id:'a',label:'a',type:'num',def:'3'},
-      {id:'b',label:'b',type:'num',def:'0.5'},
-      {id:'x0',label:'x0',type:'num',def:'1.5'},
-      {id:'tol',label:'tol',type:'num',def:'1e-6'},
-      {id:'kmax',label:'max iterations',type:'num',def:'100'}
-    ],
-    prereq:'Prefer a contractive g and invariant interval.',
-    run:()=>{const {src,f}=parseFun('fx');const {f:gx}=parseFun('gx');const a=parseNum('a'),b=parseNum('b'),x0=parseNum('x0'),tol=parseNum('tol'),k=parseNum('kmax');const out=fixedPoint(gx,[Math.min(a,b),Math.max(a,b)],x0,tol,k);return {status:['ok','Fixed Point completed'], summary:{'Root':fmt(out.root),'Iterations':out.iters.length}, details:{iters:{headers:['k','xₖ','xₖ₊₁','|Δ|'],rows:out.iters},fsrc:src, plot:(div)=>Plots.func(div,f,[Math.min(a,b),Math.max(a,b)],out.iters.map(r=>r[2]))}};}
-  },
-  'Newton':{
-    id:'newton',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',def:'x**3 - 7*x + 6'},
-      {id:'x0',label:'x0',type:'num',def:'0'},
-      {id:'tol',label:'tol',type:'num',def:'1e-6'},
-      {id:'kmax',label:'max iterations',type:'num',def:'50'}
-    ],
-    prereq:'Avoid points where the derivative is near zero.',
-    run:()=>{const {src,f}=parseFun('fx');const x0=parseNum('x0'),tol=parseNum('tol'),k=parseNum('kmax');const out=newtonRoot(f,x0,tol,k);return {status:['ok','Newton completed'], summary:{'Root':fmt(out.root),'Iterations':out.iters.length}, details:{iters:{headers:['k','xₖ','f(xₖ)','fʼ(xₖ)','xₖ₊₁','|Δ|'],rows:out.iters},fsrc:src, plot:(div)=>Plots.func(div,f,[x0-5,x0+5],out.iters.map(r=>r[4]))}};}
-  },
-  'Secant':{
-    id:'secant',
-    inputs:[
-      {id:'fx',label:'f(x) =',type:'fun',def:'x**3 - 7*x + 6'},
-      {id:'a',label:'a',type:'num',def:'3'},
-      {id:'b',label:'b',type:'num',def:'0.5'},
-      {id:'x0',label:'x0',type:'num',def:'1'},
-      {id:'x1',label:'x1',type:'num',def:'2'},
-      {id:'tol',label:'tol',type:'num',def:'1e-6'},
-      {id:'kmax',label:'max iterations',type:'num',def:'100'}
-    ],
-    prereq:'Denominator must not be near zero.',
-    run:()=>{const {src,f}=parseFun('fx');const a=parseNum('a'),b=parseNum('b'),x0=parseNum('x0'),x1=parseNum('x1'),tol=parseNum('tol'),k=parseNum('kmax');const out=secant(f,[Math.min(a,b),Math.max(a,b)],x0,x1,tol,k);return {status:['ok','Secant completed'], summary:{'Root':fmt(out.root),'Iterations':out.iters.length}, details:{iters:{headers:['k','xₖ₋₁','xₖ','xₖ₊₁','f(xₖ₊₁)','|Δ|'],rows:out.iters},fsrc:src, plot:(div)=>Plots.func(div,f,[Math.min(a,b),Math.max(a,b)],out.iters.map(r=>r[3]))}};}
+    interp: [
+      { id:'VAND', name:'Vandermonde',         inputs:['pairs'] },
+      { id:'NEWD', name:'Newton (div. diff.)', inputs:['pairs'] },
+      { id:'LAGR', name:'Lagrange',            inputs:['pairs'] },
+      { id:'SPL1', name:'Linear splines',      inputs:['pairs'] },
+      { id:'SPL2', name:'Quadratic splines',   inputs:['pairs'] },
+      { id:'SPL3', name:'Cubic splines',       inputs:['pairs'] },
+    ]
+  };
+
+  // Shortcuts
+  const $ = id => document.getElementById(id);
+  const htmlEsc = s => String(s).replace(/[&<>"]/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+  // Cache DOM elements
+  els.inputs = $('inputs');
+  els.outputs = $('outputs');
+  els.iters   = $('iters');
+  els.status  = $('status');
+  els.plot    = $('plot');
+  els.method  = $('method');
+
+  // Tabs
+  const tabs = {
+    root: $('tabRoot'),
+    direct: $('tabDirect'),
+    iter: $('tabIter'),
+    interp: $('tabInterp')
+  };
+
+  Object.entries(tabs).forEach(([ws,btn])=>{
+    btn.addEventListener('click', ()=> setWorkspace(ws));
+  });
+
+  // Populate method list for a workspace
+  function setWorkspace(ws){
+    state.workspace = ws;
+    Object.entries(tabs).forEach(([k,btn])=>{
+      btn.classList.toggle('tab-on', k===ws);
+      btn.classList.toggle('tab-off', k!==ws);
+    });
+    populateMethods();
+    renderGuide(); // show per-method guidance placeholder
+    clearUI();
   }
-});
 
-/* Matrix input (paste or build) */
-function renderMatrixWidget(targetId,labelText,defText=''){
-  const wrap=document.createElement('div');
-  const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=labelText; wrap.appendChild(lab);
-
-  const tabs=document.createElement('div'); tabs.className='tabset mb-2';
-  const btnPaste=document.createElement('button'); btnPaste.type='button'; btnPaste.className='on'; btnPaste.textContent='Paste';
-  const btnBuild=document.createElement('button'); btnBuild.type='button'; btnBuild.textContent='Build';
-  tabs.append(btnPaste,btnBuild); wrap.appendChild(tabs);
-
-  const area=document.createElement('textarea'); area.id=targetId; area.className='rounded-lg border p-2 code w-full'; area.rows=4; area.placeholder='rows by line, columns by space or comma'; area.value=defText; area.dataset.defaultValue=defText||''; wrap.appendChild(area);
-
-  const buildBox=document.createElement('div'); buildBox.style.display='none'; buildBox.className='mt-2 space-y-2';
-  buildBox.innerHTML = `
-    <div class="flex gap-2 items-center">
-      <label class="text-sm">Rows</label><input id="${targetId}_r" type="number" min="1" max="8" value="3" class="border rounded p-1 w-20"/>
-      <label class="text-sm">Cols</label><input id="${targetId}_c" type="number" min="1" max="8" value="3" class="border rounded p-1 w-20"/>
-      <button type="button" id="${targetId}_mk" class="btn btn-ghost">Make grid</button>
-      <button type="button" id="${targetId}_ex" class="btn btn-ghost">Fill example</button>
-    </div>
-    <div id="${targetId}_grid" class="space-y-1"></div>
-  `;
-  wrap.appendChild(buildBox);
-
-  function gridToText(){
-    const r=Number(document.getElementById(targetId+'_r').value);
-    const c=Number(document.getElementById(targetId+'_c').value);
-    const g=document.getElementById(targetId+'_grid');
-    const lines=[];
-    for(let i=0;i<r;i++){
-      const row=[]; for(let j=0;j<c;j++){ row.push(Number(g.querySelector(`#${targetId}_cell_${i}_${j}`).value||'0')); }
-      lines.push(row.join(' '));
-    }
-    area.value=lines.join('\\n');
+  function populateMethods(){
+    const list = REGISTRY[state.workspace];
+    els.method.innerHTML = list.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+    state.methodId = list[0]?.id || null;
+    renderInputsFor(state.methodId);
   }
-  function makeGrid(fill){
-    const r=Number(document.getElementById(targetId+'_r').value);
-    const c=Number(document.getElementById(targetId+'_c').value);
-    const g=document.getElementById(targetId+'_grid'); g.innerHTML='';
-    for(let i=0;i<r;i++){
-      const row=document.createElement('div'); row.className='flex gap-1';
-      for(let j=0;j<c;j++){
-        const inp=document.createElement('input');
-        inp.type='number'; inp.step='any'; inp.className='border rounded p-1 w-24 code'; inp.id=`${targetId}_cell_${i}_${j}`;
-        inp.value = fill ? (i===j?1:0) : 0;
-        inp.addEventListener('input', gridToText);
-        row.appendChild(inp);
+
+  // Render input controls (simple, consistent templates)
+  function renderInputsFor(id){
+    if(!id) return;
+    const meta = REGISTRY[state.workspace].find(m=>m.id===id);
+    if(!meta) return;
+    state.methodId = id;
+
+    // Default examples to allow one-click Run
+    const defaults = {
+      fx:   'x**3 - 7*x + 6',
+      gx:   '0.5*(x + 6/(x*x))',
+      a:    '3',
+      b:    '4',
+      delta:'0.25',
+      nmax: '40',
+      tol:  '1e-6',
+      imax: '50',
+      x0:   '3.5',
+      x1:   '3.8',
+      w:    '1.2',
+      A:    '4 -1 0\n-1 4 -1\n0 -1 3',
+      bvec: '2 6 2',
+      xvec: '0 0 0',
+      pairs: '0 1\n1 2\n2 0\n3 2'
+    };
+
+    // Build control rows
+    const ctl = [];
+    meta.inputs.forEach(k=>{
+      if(k==='fx') ctl.push(row('f(x) =','fxInput', defaults.fx));
+      else if(k==='gx') ctl.push(row('g(x) =','gxInput', defaults.gx));
+      else if(k==='a') ctl.push(row('a (left)','aInput', defaults.a));
+      else if(k==='b'){
+        if(state.workspace==='root') ctl.push(row('b (right)','bInput', defaults.b));
+        else ctl.push(area('b (vector)','bInput', defaults.bvec,3));
       }
-      g.appendChild(row);
-    }
-    gridToText();
-  }
-
-  btnPaste.onclick=()=>{btnPaste.className='on';btnBuild.className='';area.style.display='block';buildBox.style.display='none';};
-  btnBuild.onclick=()=>{btnBuild.className='on';btnPaste.className='';area.style.display='none';buildBox.style.display='block';makeGrid(false);};
-  buildBox.querySelector('#'+targetId+'_mk').onclick=()=>makeGrid(false);
-  buildBox.querySelector('#'+targetId+'_ex').onclick=()=>makeGrid(true);
-
-  return wrap;
-}
-
-const METHODS_DIRECT=mapRegistry({
-  'LU (simple)':{id:'luSimple',inputs:[{id:'A',label:'A',type:'mat',def:'4 -1 0\\n-1 4 -1\\n0 -1 4'},{id:'b',label:'b (vector)',type:'vec',def:'2 6 2'}],prereq:'Square invertible A.',run:()=>{const A=parseMat('A'),b=parseVec('b');if(A.length!==A[0].length)throw Error('A must be square');const {L,U}=luSimple(A);const x=bwdSub(U,fwdSub(L,b));return{status:['ok','LU (simple) completed'],summary:{'x':x},details:{matrices:{L,U}}};}},
-  'LU (partial pivot)':{id:'luPP',inputs:[{id:'A',label:'A',type:'mat',def:'0 2 9\\n1 -1 2\\n3 2 1'},{id:'b',label:'b (vector)',type:'vec',def:'1 2 3'}],prereq:'More robust than simple LU.',run:()=>{const A=parseMat('A'),b=parseVec('b');if(A.length!==A[0].length)throw Error('A must be square');const {L,U,P}=luPartialPivot(A);const x=bwdSub(U,fwdSub(L,matVec(P,b)));return{status:['ok','LU (partial pivot) completed'],summary:{'x':x},details:{matrices:{L,U,P}}};}},
-  'Crout':{id:'crout',inputs:[{id:'A',label:'A',type:'mat',def:'10 2 3\\n3 10 4\\n3 4 10'},{id:'b',label:'b (vector)',type:'vec',def:'1 2 3'}],prereq:'L non-unit diag; U unit diag.',run:()=>{const A=parseMat('A'),b=parseVec('b');const{L,U}=crout(A);const x=bwdSub(U,fwdSub(L,b));return{status:['ok','Crout completed'],summary:{'x':x},details:{matrices:{L,U}}};}},
-  'Doolittle':{id:'doolittle',inputs:[{id:'A',label:'A',type:'mat',def:'10 2 3\\n3 10 4\\n3 4 10'},{id:'b',label:'b (vector)',type:'vec',def:'1 2 3'}],prereq:'L unit diag; U general.',run:()=>{const A=parseMat('A'),b=parseVec('b');const{L,U}=doolittle(A);const x=bwdSub(U,fwdSub(L,b));return{status:['ok','Doolittle completed'],summary:{'x':x},details:{matrices:{L,U}}};}},
-  'Cholesky':{id:'choleskyCourse',inputs:[{id:'A',label:'A (symmetric; SPD expected)',type:'mat',def:'4 1 1\\n1 3 0\\n1 0 2'},{id:'b',label:'b (vector)',type:'vec',def:'1 2 3'}],prereq:'Stops if a non-positive pivot appears.',run:()=>{const A=parseMat('A'),b=parseVec('b');const{L,U}=choleskyCourse(A);const x=bwdSub(U,fwdSub(L,b));return{status:['ok','Cholesky completed'],summary:{'x':x},details:{matrices:{L,U}}};}}
-});
-
-const METHODS_ITER=mapRegistry({
-  'Jacobi':{id:'jacobi',inputs:[{id:'A',label:'A',type:'mat',def:'4 -1 0\\n-1 4 -1\\n0 -1 4'},{id:'b',label:'b',type:'vec',def:'2 6 2'},{id:'x0',label:'x0',type:'vec',def:'0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],prereq:'Diagonal must have no zeros. We show ρ(T).',run:()=>{const A=parseMat('A'),b=parseVec('b'),x0=parseVec('x0'),tol=parseNum('tol'),N=parseNum('N');const out=jacobi(A,b,x0,tol,N);const warn=out.rho>=1;const note=warn?['warn',`ρ(T)=${fmt(out.rho,6)} ≥ 1 (may diverge)`]:['ok',`ρ(T)=${fmt(out.rho,6)}`];const headers=['k','||e||'];for(let i=0;i<out.x.length;i++)headers.push(`x${i+1}`);return{status:note,summary:{'x':out.x,'Iterations':out.iters.length,'ρ(T)':fmt(out.rho,6)},details:{iters:{headers,rows:out.iters},matrices:{T:out.T,C:out.C},series:out.iters.map(r=>r[1])}};}},
-  'Gauss-Seidel':{id:'gs',inputs:[{id:'A',label:'A',type:'mat',def:'4 -1 0\\n-1 4 -1\\n0 -1 4'},{id:'b',label:'b',type:'vec',def:'2 6 2'},{id:'x0',label:'x0',type:'vec',def:'0 0 0'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],prereq:'Diagonal without zeros. We show ρ(T).',run:()=>{const A=parseMat('A'),b=parseVec('b'),x0=parseVec('x0'),tol=parseNum('tol'),N=parseNum('N');const out=gaussSeidel(A,b,x0,tol,N);const warn=out.rho>=1;const note=warn?['warn',`ρ(T)=${fmt(out.rho,6)} ≥ 1 (may diverge)`]:['ok',`ρ(T)=${fmt(out.rho,6)}`];const headers=['k','||e||'];for(let i=0;i<out.x.length;i++)headers.push(`x${i+1}`);return{status:note,summary:{'x':out.x,'Iterations':out.iters.length,'ρ(T)':fmt(out.rho,6)},details:{iters:{headers,rows:out.iters},matrices:{T:out.T,C:out.C},series:out.iters.map(r=>r[1])}};}},
-  'SOR (w)':{id:'sor',inputs:[{id:'A',label:'A',type:'mat',def:'4 -1 0\\n-1 4 -1\\n0 -1 4'},{id:'b',label:'b',type:'vec',def:'2 6 2'},{id:'x0',label:'x0',type:'vec',def:'0 0 0'},{id:'w',label:'w (0<w<2)',type:'num',def:'1.5'},{id:'tol',label:'tol',type:'num',def:'1e-7'},{id:'N',label:'Nmax',type:'num',def:'100'}],prereq:'Pick 0<w<2. We show ρ(T).',run:()=>{const A=parseMat('A'),b=parseVec('b'),x0=parseVec('x0'),w=parseNum('w'),tol=parseNum('tol'),N=parseNum('N');const out=sor(A,b,x0,w,tol,N);const warn=out.rho>=1;const note=warn?['warn',`ρ(T)=${fmt(out.rho,6)} ≥ 1 (may diverge)`]:['ok',`ρ(T)=${fmt(out.rho,6)}`];const headers=['k','||e||'];for(let i=0;i<out.x.length;i++)headers.push(`x${i+1}`);return{status:note,summary:{'x':out.x,'Iterations':out.iters.length,'ρ(T)':fmt(out.rho,6)},details:{iters:{headers,rows:out.iters},matrices:{T:out.T,C:out.C},series:out.iters.map(r=>r[1])}};}}
-});
-
-const METHODS_INTERP=mapRegistry({
-  'Vandermonde':{id:'vandermonde',inputs:[{id:'xy',label:'Table x;y per line',type:'pairs',def:'-1;3\\n0;2\\n1;3'}],prereq:'Solves polynomial coefficients via Vandermonde.',run:()=>{const {X,Y}=parsePairs('xy');const coef=vandermondeCoef(X,Y);return{status:['ok','Vandermonde completed'],summary:{'Coefficients':coef},details:{poly:coef,pts:{X,Y}}};}},
-  'Newton (divided differences)':{id:'newtonDD',inputs:[{id:'xy',label:'Table x;y per line',type:'pairs',def:'-1;3\\n0;2\\n1;3'}],prereq:'Builds the divided-difference table and coefficients.',run:()=>{const {X,Y}=parsePairs('xy');const {D,coef}=newtonDivDif(X,Y);return{status:['ok','Newton (divided differences) completed'],summary:{'Coefficients':coef},details:{matrices:{'Divided differences':D},pts:{X,Y}}};}},
-  'Lagrange':{id:'lagrange',inputs:[{id:'xy',label:'Table x;y per line',type:'pairs',def:'-1;3\\n0;2\\n1;3'}],prereq:'Builds L_i(x) and the final P(x).',run:()=>{const {X,Y}=parsePairs('xy');const {L,Coef}=lagrangePolys(X,Y);return{status:['ok','Lagrange completed'],summary:{'P(x) coefficients':Coef},details:{L,pts:{X,Y},poly:Coef}};}},
-  'Linear splines':{id:'splLin',inputs:[{id:'xy',label:'Table x;y per line (x increasing)',type:'pairs',def:'0;0\\n1;1\\n2;0.5\\n3;1.5'}],prereq:'Piecewise linear between points.',run:()=>{const {X,Y}=parsePairs('xy');const C=splineLineal(X,Y);return{status:['ok','Linear splines ready'],summary:{'Segments':C.length},details:{spl:C,pts:{X,Y}}};}},
-  'Quadratic splines':{id:'splQuad',inputs:[{id:'xy',label:'Table x;y per line',type:'pairs',def:'0;0\\n1;1\\n2;0.5\\n3;1.5'}],prereq:'C1 continuity with a boundary choice.',run:()=>{const {X,Y}=parsePairs('xy');const C=splineCuadratico(X,Y);return{status:['ok','Quadratic splines ready'],summary:{'Segments':C.length},details:{spl:C,pts:{X,Y}}};}},
-  'Cubic splines (natural)':{id:'splCub',inputs:[{id:'xy',label:'Table x;y per line',type:'pairs',def:'0;0\\n1;1\\n2;0.5\\n3;1.5'}],prereq:'Natural boundary S""(x0)=S""(xn)=0.',run:()=>{const {X,Y}=parsePairs('xy');const C=splineCubico(X,Y);return{status:['ok','Cubic splines ready'],summary:{'Segments':C.length},details:{spl:C,pts:{X,Y}}};}}
-});
-
-const METHODS_BY_WS={root:METHODS_ROOT,direct:METHODS_DIRECT,iter:METHODS_ITER,interp:METHODS_INTERP};
-
-const METHOD_GUIDES={
-  incremental:{
-    title:'Búsqueda incremental',
-    summary:'Explora f(x) desde el punto inicial a con saltos de tamaño Δ hasta encontrar un cambio de signo.',
-    checklist:[
-      'Completa f(x), el punto inicial a, el paso Δ y el número máximo de pasos.',
-      'El signo de Δ define la dirección; aumenta «Max steps» para cubrir un intervalo mayor.'
-    ],
-    reminders:[
-      'Si no aparece un cambio de signo, ajusta Δ o mueve el punto inicial.'
-    ]
-  },
-  bisection:{
-    title:'Bisección',
-    summary:'Reduce el intervalo dividiéndolo por la mitad mientras se mantenga el cambio de signo en los extremos.',
-    checklist:[
-      'Proporciona f(x), los extremos a y b (en cualquier orden), la tolerancia y el máximo de iteraciones.',
-      'Comprueba antes de ejecutar que f(a) y f(b) tengan signos opuestos.'
-    ],
-    reminders:[
-      'Si no hay cambio de signo, ubica un nuevo intervalo o usa búsqueda incremental.'
-    ]
-  },
-  falsePosition:{
-    title:'Falsa posición',
-    summary:'Calcula secantes sucesivas utilizando siempre los extremos del intervalo para aproximar la raíz.',
-    checklist:[
-      'Indica f(x), el intervalo [a,b], la tolerancia y el máximo de iteraciones.',
-      'Úsala cuando ya conoces un intervalo con cambio de signo y buscas convergencia más rápida que la bisección.'
-    ],
-    reminders:[
-      'Si las iteraciones se estancan en un extremo, ajusta el intervalo o cambia al método de la secante.'
-    ]
-  },
-  fixedPoint:{
-    title:'Punto fijo',
-    summary:'Itera xₖ₊₁ = g(xₖ) dentro de un intervalo estable para localizar un punto fijo donde f(x)=0.',
-    checklist:[
-      'Ingresa f(x), g(x), el intervalo [a,b], la semilla x₀, la tolerancia y el máximo de iteraciones.',
-      'Verifica que g(x) mantenga las iteraciones dentro del intervalo elegido.'
-    ],
-    reminders:[
-      'Si la iteración se sale de rango, ajusta g(x), la semilla o acota mejor el intervalo.'
-    ]
-  },
-  newton:{
-    title:'Newton-Raphson',
-    summary:'Aprovecha la derivada de f(x) para alcanzar convergencia cuadrática cerca de la raíz.',
-    checklist:[
-      'Define f(x), el valor inicial x₀, la tolerancia y el número máximo de iteraciones.',
-      'Escoge x₀ cercano a la raíz y evita zonas donde fʼ(x)≈0.'
-    ],
-    reminders:[
-      'Si el denominador se acerca a cero, cambia la semilla o prueba con la secante.'
-    ]
-  },
-  secant:{
-    title:'Secante',
-    summary:'Aproxima la derivada con dos evaluaciones consecutivas sin calcular fʼ(x) explícitamente.',
-    checklist:[
-      'Proporciona f(x), un intervalo de referencia [a,b], las semillas x₀ y x₁, la tolerancia y el máximo de iteraciones.',
-      'Comprueba que los nuevos puntos permanezcan en el intervalo definido.'
-    ],
-    reminders:[
-      'Si el método sale del intervalo o el denominador es pequeño, reajusta las semillas.'
-    ]
-  },
-  luSimple:{
-    title:'LU sin pivoteo',
-    summary:'Factoriza A≈LU directamente para resolver Ly=b y luego Ux=y.',
-    checklist:[
-      'Ingresa una matriz cuadrada A y el vector b asociado.',
-      'Adecuado para matrices bien condicionadas sin ceros en pivotes.'
-    ],
-    reminders:[
-      'Si surge un pivote cercano a cero, cambia al método con pivoteo parcial.'
-    ]
-  },
-  luPP:{
-    title:'LU con pivoteo parcial',
-    summary:'Intercambia filas cuando es necesario para obtener una factorización LU más estable.',
-    checklist:[
-      'Usa una matriz cuadrada A y el vector b; la matriz P registra los intercambios.',
-      'Ideal cuando la diagonal de A contiene valores pequeños o nulos.'
-    ],
-    reminders:[
-      'Consulta la matriz P para entender el reordenamiento aplicado.'
-    ]
-  },
-  crout:{
-    title:'Crout',
-    summary:'Genera L con diagonal libre y U con unos para resolver el sistema en dos pasos.',
-    checklist:[
-      'Introduce la matriz cuadrada A y el vector b a resolver.',
-      'Útil cuando buscas que L conserve la escala de los pivotes.'
-    ],
-    reminders:[
-      'Revisa que ningún pivote diagonal sea cero antes de continuar.'
-    ]
-  },
-  doolittle:{
-    title:'Doolittle',
-    summary:'Construye L con unos en la diagonal superior y U general.',
-    checklist:[
-      'Ingresa la matriz cuadrada A y el vector b correspondiente.',
-      'Comparte estructura con Crout pero normaliza la diagonal de L a uno.'
-    ],
-    reminders:[
-      'Si aparecen pivotes nulos, considera aplicar pivoteo parcial.'
-    ]
-  },
-  choleskyCourse:{
-    title:'Cholesky',
-    summary:'Descompone matrices simétricas definidas positivas en el producto L·U.',
-    checklist:[
-      'Proporciona una matriz simétrica (SPD) A y el vector b.',
-      'Ideal para sistemas SPD; se detiene si detecta un pivote no positivo.'
-    ],
-    reminders:[
-      'Si falla, verifica la simetría y positividad de A antes de reintentar.'
-    ]
-  },
-  jacobi:{
-    title:'Jacobi',
-    summary:'Actualiza todas las variables en paralelo usando la iteración anterior completa.',
-    checklist:[
-      'Indica A, b, el vector inicial x₀, la tolerancia y Nmax.',
-      'Asegúrate de que la diagonal de A no tenga ceros y observa ρ(T) para evaluar convergencia.'
-    ],
-    reminders:[
-      'Si ρ(T)≥1, reordena el sistema o cambia de método iterativo.'
-    ]
-  },
-  gs:{
-    title:'Gauss-Seidel',
-    summary:'Reutiliza los valores recién actualizados para acelerar la convergencia respecto a Jacobi.',
-    checklist:[
-      'Ingresa A, b, el vector inicial x₀, la tolerancia y Nmax.',
-      'Funciona mejor con matrices diagonalmente dominantes; revisa ρ(T).' 
-    ],
-    reminders:[
-      'Si diverge, intenta reordenar filas o cambia a SOR con un ω apropiado.'
-    ]
-  },
-  sor:{
-    title:'SOR',
-    summary:'Introduce un factor de relajación ω para mejorar la velocidad de Gauss-Seidel.',
-    checklist:[
-      'Define A, b, el vector inicial x₀, el parámetro ω (0<ω<2), la tolerancia y Nmax.',
-      'Comienza con ω≈1 y ajusta según el ritmo de convergencia.'
-    ],
-    reminders:[
-      'Un ω fuera de rango genera error; si ρ(T) es grande, prueba otro ω.'
-    ]
-  },
-  vandermonde:{
-    title:'Vandermonde',
-    summary:'Obtiene los coeficientes del polinomio interpolante resolviendo el sistema de Vandermonde.',
-    checklist:[
-      'Introduce pares x;y (uno por línea) para formar la matriz.',
-      'Adecuado para pocos puntos; puede volverse inestable con conjuntos grandes.'
-    ],
-    reminders:[
-      'Ordena los puntos por x para interpretar mejor el polinomio obtenido.'
-    ]
-  },
-  newtonDD:{
-    title:'Newton (diferencias divididas)',
-    summary:'Construye la tabla de diferencias divididas y la forma de Newton del polinomio.',
-    checklist:[
-      'Ingresa pares x;y ordenados; se genera la tabla triangular automáticamente.',
-      'Permite añadir nuevos puntos reutilizando resultados previos.'
-    ],
-    reminders:[
-      'Evita repetir valores de x para impedir divisiones por cero.'
-    ]
-  },
-  lagrange:{
-    title:'Lagrange',
-    summary:'Suma las bases Lᵢ(x) ponderadas para construir el polinomio interpolante.',
-    checklist:[
-      'Escribe los pares x;y; se calcularán las bases y los coeficientes finales.',
-      'Facilita evaluar P(x) en cualquier punto sin resolver sistemas adicionales.'
-    ],
-    reminders:[
-      'Con muchos puntos, los polinomios pueden oscilar (fenómeno de Runge).' 
-    ]
-  },
-  splLin:{
-    title:'Splines lineales',
-    summary:'Conecta cada par de nodos con segmentos rectos continuos.',
-    checklist:[
-      'Ingresa pares x;y con x en orden creciente.',
-      'Ideal para aproximaciones rápidas sin oscilaciones.'
-    ],
-    reminders:[
-      'Añade más nodos si necesitas capturar más curvatura.'
-    ]
-  },
-  splQuad:{
-    title:'Splines cuadráticos',
-    summary:'Genera tramos cuadráticos con continuidad en valor y primera derivada.',
-    checklist:[
-      'Indica pares x;y; se fija una condición inicial para cerrar el sistema.',
-      'Brinda suavidad adicional frente a los splines lineales.'
-    ],
-    reminders:[
-      'Asegúrate de que los valores de x sean distintos para cada punto.'
-    ]
-  },
-  splCub:{
-    title:'Splines cúbicos naturales',
-    summary:'Produce una interpolación suave con derivadas segunda nulas en los extremos.',
-    checklist:[
-      'Introduce pares x;y ordenados para resolver el sistema tridiagonal.',
-      'Garantiza continuidad en valor, primera y segunda derivada.'
-    ],
-    reminders:[
-      'Si prefieres otras condiciones de borde, considera otro tipo de spline.'
-    ]
-  }
-};
-
-/* ============ UI ============ */
-const WORKSPACE_LABELS={root:'Root Finding',direct:'Direct Methods',iter:'Iterative Methods',interp:'Interpolation'};
-
-function cacheElements(){
-  els.tabRoot=document.getElementById('tabRoot');
-  els.tabDirect=document.getElementById('tabDirect');
-  els.tabIter=document.getElementById('tabIter');
-  els.tabInterp=document.getElementById('tabInterp');
-  els.method=document.getElementById('method');
-  els.inputs=document.getElementById('inputs');
-  els.outputs=document.getElementById('outputs');
-  els.iters=document.getElementById('iters');
-  els.plot=document.getElementById('plot');
-  els.status=document.getElementById('status');
-  els.methodGuide=document.getElementById('methodGuide');
-  els.runBtn=document.getElementById('runBtn');
-  els.clearBtn=document.getElementById('clearBtn');
-  els.history=document.getElementById('history');
-  els.clearHistory=document.getElementById('clearHistory');
-}
-
-function setTabStyles(ws){
-  els.tabRoot.className='btn '+(ws==='root'?'tab-on':'tab-off');
-  els.tabDirect.className='btn '+(ws==='direct'?'tab-on':'tab-off');
-  els.tabIter.className='btn '+(ws==='iter'?'tab-on':'tab-off');
-  els.tabInterp.className='btn '+(ws==='interp'?'tab-on':'tab-off');
-}
-
-function getRegistry(ws){
-  return METHODS_BY_WS[ws]||[];
-}
-
-function getCurrentMethod(){
-  return getRegistry(state.workspace).find(m=>m.id===state.methodId) || null;
-}
-
-function renderWorkspace(ws){
-  state.workspace=ws;
-  setTabStyles(ws);
-  const registry=getRegistry(ws);
-  els.method.innerHTML='';
-  registry.forEach(meta=>{
-    const opt=document.createElement('option');
-    opt.value=meta.id; opt.textContent=meta.name;
-    els.method.appendChild(opt);
-  });
-  if(!registry.length){
-    els.inputs.innerHTML='<div class="text-sm text-slate-500">No methods available.</div>';
-    state.methodId=null;
-    resetPanels('Select Run to execute');
-    return;
-  }
-  const firstId=registry[0].id;
-  renderMethod(firstId);
-}
-
-function renderMethod(id){
-  const registry=getRegistry(state.workspace);
-  const meta=registry.find(m=>m.id===id) || registry[0];
-  if(!meta){
-    els.inputs.innerHTML='<div class="text-sm text-slate-500">Method not available.</div>';
-    state.methodId=null;
-    resetPanels('Select Run to execute');
-    return;
-  }
-  state.methodId=meta.id;
-  els.method.value=meta.id;
-  const box=els.inputs; box.innerHTML='';
-  (meta.inputs||[]).forEach(inp=>{
-    const wrap=document.createElement('div'); wrap.className='flex flex-col mb-3';
-    if(inp.label){
-      const lab=document.createElement('label'); lab.className='text-sm font-semibold mb-1'; lab.textContent=inp.label; wrap.appendChild(lab);
-    }
-    let control;
-    if(inp.type==='fun'){
-      control=document.createElement('input');
-      control.type='text';
-      control.placeholder=inp.hint||'e.g., x**3 - 7*x + 6';
-      control.value=inp.def||'';
-      control.className='rounded-lg border p-2 code w-full';
-    }else if(inp.type==='num'){
-      control=document.createElement('input');
-      control.type='text';
-      control.value=inp.def||'';
-      control.className='rounded-lg border p-2 code w-full';
-    }else if(inp.type==='vec' || inp.type==='pairs'){
-      control=document.createElement('textarea');
-      control.rows=inp.type==='vec'?2:4;
-      control.value=inp.def||'';
-      control.placeholder=inp.type==='vec'?'e.g., 1 1 1':'x;y per line';
-      control.className='rounded-lg border p-2 code w-full';
-    }else if(inp.type==='mat'){
-      const widget=renderMatrixWidget(inp.id, inp.label, inp.def||'');
-      wrap.appendChild(widget);
-      box.appendChild(wrap);
-      return;
-    }
-    if(control){
-      control.id=inp.id;
-      control.dataset.defaultValue=inp.def||'';
-      wrap.appendChild(control);
-    }
-    box.appendChild(wrap);
-  });
-  renderGuide(meta);
-  resetPanels('Select Run to execute');
-}
-
-function resetPanels(message){
-  if(els.status) els.status.innerHTML='';
-  if(els.outputs) els.outputs.innerHTML='';
-  if(els.iters) els.iters.innerHTML='';
-  if(els.plot) Plots.blank('plot',message||'Select Run to execute');
-}
-
-function renderGuide(meta){
-  if(!els.methodGuide){return;}
-  if(!meta){
-    els.methodGuide.innerHTML='<div class="text-sm text-slate-600">Select a method to see its checklist.</div>';
-    return;
-  }
-  const info=METHOD_GUIDES[meta.id];
-  if(!info){
-    els.methodGuide.innerHTML=`<div class="text-sm">${meta.prereq||'Fill the inputs and click Run.'}</div>`;
-    return;
-  }
-  const checklist=info.checklist?.length
-    ? '<div><h5 class="text-sm font-semibold text-slate-700">Para empezar</h5><ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">'+info.checklist.map(item=>`<li>${item}</li>`).join('')+'</ul></div>'
-    : '';
-  const reminders=info.reminders?.length
-    ? '<div class="pt-2 border-t border-blue-100 mt-2"><h5 class="text-sm font-semibold text-slate-700">Consejos rápidos</h5><ul class="list-disc pl-5 text-sm text-slate-600 space-y-1 mt-1">'+info.reminders.map(item=>`<li>${item}</li>`).join('')+'</ul></div>'
-    : '';
-  const prereq=meta.prereq?`<p class="text-sm text-blue-700">${meta.prereq}</p>`:'';
-  els.methodGuide.innerHTML=`
-    <div class="space-y-3">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Guía del método</p>
-        <h4 class="font-semibold text-slate-900">${info.title}</h4>
-        <p class="text-sm text-slate-600 mt-1">${info.summary}</p>
-        ${prereq}
-      </div>
-      ${checklist}
-      ${reminders}
-    </div>
-  `;
-}
-
-function clearCurrentMethod(){
-  if(!state.methodId) return;
-  const registry=getRegistry(state.workspace);
-  const meta=registry.find(m=>m.id===state.methodId);
-  (meta?.inputs||[]).forEach(inp=>{
-    const ctrl=document.getElementById(inp.id);
-    if(ctrl){ ctrl.value=inp.def||''; }
-  });
-  const defaults=els.inputs.querySelectorAll('[data-default-value]');
-  defaults.forEach(el=>{ el.value=el.dataset.defaultValue||''; });
-  resetPanels('Select Run to execute');
-}
-
-function normalizeSummary(summary){
-  if(!summary) return [];
-  if(Array.isArray(summary)) return summary;
-  if(typeof summary==='object') return Object.entries(summary);
-  return [['Summary',summary]];
-}
-
-function formatSummaryValue(value){
-  if(Array.isArray(value)) return '['+value.map(v=>formatSummaryValue(v)).join(', ')+']';
-  if(typeof value==='number') return Number.isInteger(value)?String(value):fmt(value);
-  if(value&&typeof value==='object') return JSON.stringify(value);
-  return String(value);
-}
-
-function renderOutputs(summary,details){
-  const out=els.outputs; out.innerHTML='';
-  if(details?.fsrc){ out.innerHTML += `<div><span class="font-semibold">f(x):</span> <span class="code">${details.fsrc}</span></div>`; }
-  normalizeSummary(summary).forEach(([label,val])=>{
-    out.innerHTML += `<div><span class="font-semibold">${label}:</span> ${formatSummaryValue(val)}</div>`;
-  });
-  if(details?.matrices && state.workspace!=='direct'){
-    Object.entries(details.matrices).forEach(([label,mat])=>{
-      out.innerHTML += `<div><div class="font-semibold">${label}:</div><pre class="code">${fixedWidthMatrix(mat)}</pre></div>`;
+      else if(k==='delta') ctl.push(row('Δ (step)','deltaInput', defaults.delta));
+      else if(k==='nmax') ctl.push(row('n max','nmaxInput', defaults.nmax));
+      else if(k==='tol') ctl.push(row('tolerance','tolInput', defaults.tol));
+      else if(k==='imax') ctl.push(row('max iterations','imaxInput', defaults.imax));
+      else if(k==='x0'){
+        if(state.workspace==='iter') ctl.push(area('x0 (vector)','x0Input', defaults.xvec,3));
+        else ctl.push(row('x0','x0Input', defaults.x0));
+      }
+      else if(k==='x1') ctl.push(row('x1','x1Input', defaults.x1));
+      else if(k==='w')  ctl.push(row('ω (0<w<2)','wInput', defaults.w));
+      else if(k==='A')  ctl.push(area('A (matrix)', 'AInput', defaults.A,5));
+      else if(k==='pairs') ctl.push(area('x;y pairs (one per line)','pairsInput', defaults.pairs,5));
     });
-  }
-  if(details?.extraText){
-    out.innerHTML += `<pre class="code">${details.extraText}</pre>`;
-  }
-}
 
-function renderIterations(info){
-  const wrap=els.iters; wrap.innerHTML='';
-  if(!info?.rows?.length){
-    wrap.innerHTML='<div class="text-sm text-slate-500">No iteration data to display.</div>';
-    return;
+    els.inputs.innerHTML = `<div class="grid-3">${ctl.join('')}</div>`;
+    function row(label,id,val){ return `
+      <div><label class="block text-sm font-semibold mb-1">${htmlEsc(label)}</label>
+      <input id="${id}" class="w-full rounded-lg border p-2" value="${htmlEsc(val)}"></div>`; }
+    function area(label,id,val,rows=5){ return `
+      <div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1">${htmlEsc(label)}</label>
+      <textarea id="${id}" rows="${rows}" class="w-full rounded-lg border p-2">${htmlEsc(val)}</textarea></div>`; }
+
+    // update guide for this method
+    renderGuide();
   }
-  const headers=info.headers?.length?info.headers:info.rows[0].map((_,i)=>'c'+(i+1));
-  const rows=info.rows;
-  const needsGap=rows.length>8;
-  const bodyRows=needsGap?rows.slice(0,3).concat(rows.slice(-3)):rows;
-  let html='<table class="w-full table-sm"><thead><tr>'+headers.map(h=>`<th class="text-left table-sm">${h}</th>`).join('')+'</tr></thead><tbody>';
-  bodyRows.forEach((row,idx)=>{
-    html+='<tr>'+row.map(val=>`<td class="table-sm">${typeof val==='number'?fmt(val):val}</td>`).join('')+'</tr>';
-    if(needsGap && idx===2){ html+=`<tr><td colspan="${headers.length}" class="table-sm text-center text-slate-400">…</td></tr>`; }
-  });
-  html+='</tbody></table>';
-  wrap.innerHTML=html;
-}
 
-function renderVisual(details){
-  if(!els.plot) return;
-  els.plot.innerHTML='';
-  if(typeof details?.plot==='function'){
-    details.plot('plot');
-  }else if(state.workspace==='iter' && details?.series){
-    Plots.series('plot',details.series,'Residual norm per iteration');
-  }else if(state.workspace==='interp' && details?.pts){
-    Plots.scatterFit('plot',details.pts,details.poly||null,details.spl||null);
-  }else if(details?.matrices){
-    const blocks=Object.entries(details.matrices).map(([label,mat])=>`<div class="mb-3"><div class="font-semibold">${label}</div><pre class="code">${fixedWidthMatrix(mat)}</pre></div>`).join('');
-    els.plot.innerHTML=`<div class="code text-sm overflow-auto" style="max-height:420px;">${blocks}</div>`;
-  }else{
-    Plots.blank('plot','Select Run to execute');
+  // Change handler for the select
+  els.method.addEventListener('change', e => renderInputsFor(e.target.value));
+
+  // Run + Clear
+  $('runBtn').addEventListener('click', runCurrent);
+  $('clearBtn').addEventListener('click', clearUI);
+  $('clearHistory').addEventListener('click', ()=>{ localStorage.removeItem('nm_history'); renderHistory(); });
+
+  function clearUI(){
+    els.outputs.innerHTML = '';
+    els.iters.innerHTML   = '';
+    els.status.innerHTML  = '';
+    Plots.blank(els.plot, 'Pick a method and click Run');
   }
-}
 
-function summarizeForHistory(summary){
-  const entries=normalizeSummary(summary);
-  if(!entries.length) return '';
-  return entries.map(([label,val])=>`${label}: ${formatSummaryValue(val)}`).join(' • ');
-}
-
-function runCurrentMethod(){
-  const meta=getCurrentMethod();
-  if(!meta) return;
-  try{
-    const res=meta.run();
-    const status=res.status||['ok','Done'];
-    statusBadge(status[0],status[1]||'Done');
-    renderOutputs(res.summary,res.details||{});
-    renderIterations(res.details?.iters);
-    renderVisual(res.details||{});
-    History.add({
-      time:Date.now(),
-      ws:state.workspace,
-      method:meta.name,
-      methodId:meta.id,
-      fun:res.details?.fsrc||null,
-      status:status[0],
-      message:status[1]||'',
-      summary:summarizeForHistory(res.summary)
-    });
-    History.render();
-  }catch(err){
-    if(err instanceof Recommendation) statusBadge('warn',err.message);
-    else statusBadge('err',err.message);
+  // Per-method guidance (short, friendly)
+  function renderGuide(){
+    const ws = state.workspace, id = state.methodId;
+    const help = {
+      root: 'Provide f(x) and a,b. The tool auto-orders [a,b] and checks sign change when required. Try Incremental Search if Bisection/False Position report “no sign change”.',
+      direct: 'Paste A and b. We’ll compute L/U (and P if pivoting). Avoid singular matrices (det≈0).',
+      iter: 'Provide A,b and an initial guess x0. We show the spectral radius ρ(T); if ρ>1, expect divergence.',
+      interp: 'Paste data as x;y per line. Pick a scheme (Vandermonde, Newton, Lagrange, or splines) and compare the fit.'
+    };
+    $('methodGuide').innerHTML = `<h4>Tips</h4><p class="text-slate-600">${help[ws]}</p>`;
   }
-}
 
-const History={
-  key:'nmh.history.v5',
-  add(item){ const arr=this.get(); arr.unshift(item); localStorage.setItem(this.key,JSON.stringify(arr.slice(0,30))); },
-  get(){ try{ return JSON.parse(localStorage.getItem(this.key)||'[]'); }catch{return [];} },
-  clear(){ localStorage.removeItem(this.key); this.render(); },
-  render(){
-    if(!els.history) return;
-    const arr=this.get();
-    if(!arr.length){
-      els.history.innerHTML='<div class="text-sm text-slate-600">No runs yet.</div>';
-      return;
+  // History helpers
+  function pushHistory(entry){
+    const H = JSON.parse(localStorage.getItem('nm_history')||'[]');
+    H.unshift({...entry, t: new Date().toISOString()});
+    while(H.length>20) H.pop();
+    localStorage.setItem('nm_history', JSON.stringify(H));
+    renderHistory();
+  }
+  function renderHistory(){
+    const H = JSON.parse(localStorage.getItem('nm_history')||'[]');
+    if(!H.length){ $('history').innerHTML='<p class="text-slate-500 text-sm">No runs yet.</p>'; return; }
+    $('history').innerHTML = H.map(h=>`
+      <div class="rounded-lg border p-3 mb-2">
+        <div class="text-xs text-slate-500">${new Date(h.t).toLocaleString()}</div>
+        <div class="font-semibold">${htmlEsc(h.title)}</div>
+        ${h.fn ? `<div class="text-xs text-slate-600">f(x)= <span class="code">${htmlEsc(h.fn)}</span></div>`:''}
+        <div class="text-xs text-slate-600">Result: ${htmlEsc(h.result)}</div>
+      </div>`).join('');
+  }
+
+  // Core runner
+  function runCurrent(){
+    try{
+      const ws = state.workspace, id = state.methodId;
+      let fnSrc=null;
+
+      if(ws==='root'){
+        const {src,f} = parseFun('fxInput'); fnSrc = src;
+        if(id==='INC'){
+          const a = parseNum('aInput','a'), delta = parseNum('deltaInput','Δ'), nmax = parseNum('nmaxInput','n max');
+          const out = incSearch(f,a,delta,nmax);
+          statusBadge(out.bracket?'ok':'warn', out.msg);
+          const stepEnd = a + (delta||1)*nmax;
+          const plotRange = [Math.min(a,stepEnd), Math.max(a,stepEnd)];
+          Plots.func(els.plot,f,plotRange, out.bracket ? out.bracket : []);
+          els.outputs.textContent = out.bracket ? `Bracket: [${fmt(out.bracket[0])}, ${fmt(out.bracket[1])}]` : 'No bracket found.';
+          els.iters.innerHTML = '';
+          pushHistory({title:'Incremental Search', fn: fnSrc, result: out.bracket?`[${fmt(out.bracket[0])}, ${fmt(out.bracket[1])}]`:'no bracket'});
+          return;
+        }
+        if(id==='BISE'){
+          const a = parseNum('aInput','a'), b = parseNum('bInput','b');
+          const tol = parseNum('tolInput','tolerance');
+          const imax = parseNum('imaxInput','max iterations');
+          const r=bisection(f,a,b,tol,imax);
+          statusBadge('ok','Bisection ran successfully.');
+          Plots.func(els.plot,f,[Math.min(a,b),Math.max(a,b)],[r.root]);
+          renderRootOutputs('Bisection',fnSrc,r);
+          return;
+        }
+        if(id==='FALS'){
+          const a = parseNum('aInput','a'), b = parseNum('bInput','b');
+          const tol = parseNum('tolInput','tolerance');
+          const imax = parseNum('imaxInput','max iterations');
+          const r=falsePosition(f,a,b,tol,imax);
+          statusBadge('ok','False position ran successfully.');
+          Plots.func(els.plot,f,[Math.min(a,b),Math.max(a,b)],[r.root]);
+          renderRootOutputs('False Position',fnSrc,r);
+          return;
+        }
+        if(id==='FIXP'){
+          const {f:gx}=parseFun('gxInput');
+          const a = parseNum('aInput','a'), b = parseNum('bInput','b');
+          const x0 = parseNum('x0Input','x0');
+          const tol = parseNum('tolInput','tolerance');
+          const imax = parseNum('imaxInput','max iterations');
+          const r=fixedPoint(gx,[Math.min(a,b),Math.max(a,b)],x0,tol,imax);
+          statusBadge('ok','Fixed point ran.');
+          Plots.func(els.plot,f,[Math.min(a,b),Math.max(a,b)], r.iters.map(v=>v[2]));
+          renderSeqOutputs('Fixed Point',fnSrc,r,['k','x_k','x_{k+1}','|Δ|']);
+          return;
+        }
+        if(id==='NEWT'){
+          const x0 = parseNum('x0Input','x0');
+          const tol = parseNum('tolInput','tolerance');
+          const imax = parseNum('imaxInput','max iterations');
+          const r=newtonRoot(f,x0,tol,imax);
+          statusBadge('ok','Newton ran.');
+          const span = Math.max(5, Math.abs(x0)+1);
+          Plots.func(els.plot,f,[x0-span,x0+span],[r.root]);
+          renderSeqOutputs('Newton',fnSrc,r,['k','x_k','f(x_k)','f’(x_k)','x_{k+1}','|Δ|']);
+          return;
+        }
+        if(id==='SECA'){
+          const a = parseNum('aInput','a'), b = parseNum('bInput','b');
+          const x0 = parseNum('x0Input','x0');
+          const x1 = parseNum('x1Input','x1');
+          const tol = parseNum('tolInput','tolerance');
+          const imax = parseNum('imaxInput','max iterations');
+          const r=secant(f,[Math.min(a,b),Math.max(a,b)],x0,x1,tol,imax);
+          statusBadge('ok','Secant ran.');
+          Plots.func(els.plot,f,[Math.min(a,b),Math.max(a,b)],[r.root]);
+          renderSeqOutputs('Secant',fnSrc,r,['k','x_{k-1}','x_k','x_{k+1}','f(x_{k+1})','|Δ|']);
+          return;
+        }
+      }
+
+      if(ws==='direct'){
+        const A = parseMat('AInput','A');
+        const b = parseVec('bInput','b');
+        if(state.methodId==='LUS'){ const {L,U}=luSimple(A); showLU('LU (simple)',A,b,L,U); return; }
+        if(state.methodId==='LUP'){ const {L,U,P}=luPartialPivot(A); showLU('LU (partial pivot)',A,b,L,U,P); return; }
+        if(state.methodId==='CROT'){ const {L,U}=crout(A); showLU('Crout',A,b,L,U); return; }
+        if(state.methodId==='DOOL'){ const {L,U}=doolittle(A); showLU('Doolittle',A,b,L,U); return; }
+        if(state.methodId==='CHOL'){ const {L,U}=choleskyCourse(A); showLU('Cholesky (course)',A,b,L,U); return; }
+      }
+
+      if(ws==='iter'){
+        const A=parseMat('AInput','A');
+        const b=parseVec('bInput','b');
+        const rawX0 = ($('x0Input')?.value || '').trim();
+        const x0 = rawX0 ? parseVec('x0Input','x0') : Array(A.length).fill(0);
+        const tol=parseNum('tolInput','tolerance');
+        const imax=parseNum('imaxInput','max iterations');
+        if(state.methodId==='JACO'){ const r=jacobi(A,b,x0,tol,imax); statusBadge('ok',`Jacobi ran (ρ=${fmt(r.rho,3)}).`); renderIterSys('Jacobi',r); return; }
+        if(state.methodId==='GS'){ const r=gaussSeidel(A,b,x0,tol,imax); statusBadge('ok',`Gauss–Seidel ran (ρ=${fmt(r.rho,3)}).`); renderIterSys('Gauss–Seidel',r); return; }
+        if(state.methodId==='SOR'){ const w=parseNum('wInput','ω'); const r=sor(A,b,x0,w,tol,imax); statusBadge('ok',`SOR ran (ρ=${fmt(r.rho,3)}).`); renderIterSys('SOR',r); return; }
+      }
+
+      if(ws==='interp'){
+        const {X,Y}=parsePairs('pairsInput','pairs');
+        if(state.methodId==='VAND'){ const c=vandermondeCoef(X,Y); statusBadge('ok','Vandermonde coefficients computed.'); els.outputs.textContent='Coefficients:\n'+fixedWidthMatrix([c]); Plots.scatterFit(els.plot,{X,Y},c); pushHistory({title:'Vandermonde', result:`deg ${c.length-1}`}); els.iters.innerHTML=''; return; }
+        if(state.methodId==='NEWD'){ const {D,coef}=newtonDivDif(X,Y); statusBadge('ok','Newton divided differences computed.'); els.outputs.textContent='Diagonal coef:\n'+fixedWidthMatrix([coef]); Plots.scatterFit(els.plot,{X,Y}); pushHistory({title:'Newton (div. diff.)', result:`deg ${coef.length-1}`}); els.iters.innerHTML=''; return; }
+        if(state.methodId==='LAGR'){ const {Coef}=lagrangePolys(X,Y); statusBadge('ok','Lagrange polynomial computed.'); els.outputs.textContent='Coefficients:\n'+fixedWidthMatrix([Coef]); Plots.scatterFit(els.plot,{X,Y},Coef); pushHistory({title:'Lagrange', result:`deg ${Coef.length-1}`}); els.iters.innerHTML=''; return; }
+        if(state.methodId==='SPL1'){ const S=splineLineal(X,Y); statusBadge('ok','Linear splines computed.'); els.outputs.textContent='Segments [p, q]:\n'+fixedWidthMatrix(S); Plots.scatterFit(els.plot,{X,Y},null,S); pushHistory({title:'Linear splines', result:`${S.length} segments`}); els.iters.innerHTML=''; return; }
+        if(state.methodId==='SPL2'){ const S=splineCuadratico(X,Y); statusBadge('ok','Quadratic splines computed.'); els.outputs.textContent='Segments [A, B, C]:\n'+fixedWidthMatrix(S); Plots.scatterFit(els.plot,{X,Y},null,S); pushHistory({title:'Quadratic splines', result:`${S.length} segments`}); els.iters.innerHTML=''; return; }
+        if(state.methodId==='SPL3'){ const S=splineCubico(X,Y); statusBadge('ok','Cubic splines computed.'); els.outputs.textContent='Segments [A, B, C, D]:\n'+fixedWidthMatrix(S); Plots.scatterFit(els.plot,{X,Y},null,S); pushHistory({title:'Cubic splines', result:`${S.length} segments`}); els.iters.innerHTML=''; return; }
+      }
+    } catch(e){
+      if(e instanceof Recommendation){ statusBadge('warn', e.message); }
+      else { statusBadge('err', e.message); }
+      els.outputs.textContent = '';
+      els.iters.innerHTML = '';
+      Plots.blank(els.plot,'');
     }
-    els.history.innerHTML=arr.map(item=>{
-      const when=new Date(item.time).toLocaleString();
-      const wsLabel=WORKSPACE_LABELS[item.ws]||item.ws;
-      const fun=item.fun?` • f(x)=${item.fun}`:'';
-      const badgeClass=item.status==='ok'?'badge-ok':item.status==='warn'?'badge-warn':'badge-err';
-      return `<div class="border-b py-2">
-        <div class="flex items-center justify-between">
-          <div class="font-semibold">${when}</div>
-          <span class="badge ${badgeClass}">${item.status.toUpperCase()}</span>
-        </div>
-        <div class="text-sm">${wsLabel} • ${item.method}${fun}</div>
-        <div class="text-sm text-slate-600">${item.summary||item.message}</div>
-      </div>`;
-    }).join('');
   }
-};
 
-function init(){
-  cacheElements();
-  els.tabRoot.addEventListener('click',()=>renderWorkspace('root'));
-  els.tabDirect.addEventListener('click',()=>renderWorkspace('direct'));
-  els.tabIter.addEventListener('click',()=>renderWorkspace('iter'));
-  els.tabInterp.addEventListener('click',()=>renderWorkspace('interp'));
-  els.method.addEventListener('change',()=>renderMethod(els.method.value));
-  els.runBtn.addEventListener('click',()=>runCurrentMethod());
-  els.clearBtn.addEventListener('click',()=>clearCurrentMethod());
-  els.clearHistory.addEventListener('click',()=>History.clear());
-  renderWorkspace('root');
-  History.render();
-}
+  function renderRootOutputs(name, fnSrc, r){
+    const {root,iters,range} = r;
+    const [L,R] = range || [];
+    els.outputs.innerHTML = `Root ≈ ${fmt(root)}${L!==undefined?`  on [${fmt(L)}, ${fmt(R)}]`:''}`;
+    renderIters(iters, ['k','L','R','mid','f(L)','f(R)','f(mid)','err']);
+    pushHistory({title:name, fn: fnSrc, result:`root≈${fmt(root)}`});
+  }
+  function renderSeqOutputs(name, fnSrc, r, headers){
+    els.outputs.textContent = `Root ≈ ${fmt(r.root)}`;
+    renderIters(r.iters, headers);
+    pushHistory({title:name, fn: fnSrc, result:`root≈${fmt(r.root)}`});
+  }
+  function renderIterSys(name, r){
+    const lastErr = r.iters.at(-1)?.[1] ?? 0;
+    els.outputs.textContent = `${name} finished. ρ(T)=${fmt(r.rho,3)}  ||e||=${fmt(lastErr,6)}`;
+    const cols = r.iters[0]?.length || 2;
+    const headers = ['k','||e||'];
+    for(let i=2;i<cols;i++){ headers.push(`x${i-1}`); }
+    const rows = r.iters.map(row=>[row[0],row[1],...row.slice(2)]);
+    renderIters(rows, headers);
+    if(r.iters.length){
+      Plots.series(els.plot, r.iters.map(row=>row[1]), 'Error per iteration');
+    } else {
+      Plots.blank(els.plot, 'No iterations to plot');
+    }
+    pushHistory({title:name, result:`ρ=${fmt(r.rho,3)}`});
+  }
+  function renderIters(rows, headers){
+    if(!rows?.length){ els.iters.innerHTML=''; return; }
+    const head = `<tr>${headers.map(h=>`<th class="text-left">${h}</th>`).join('')}</tr>`;
+    const first3 = rows.slice(0,3);
+    const last3  = rows.slice(-3);
+    const bodyRows = rows.length>6 ? [...first3, [ '…', ...Array(headers.length-1).fill('…') ], ...last3] : rows;
+    const body = bodyRows.map(r=>`<tr>${r.map(c=>`<td class="code w-ch">${htmlEsc(fmt(c))}</td>`).join('')}</tr>`).join('');
+    els.iters.innerHTML = `<table class="w-full table-sm"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  }
 
-document.addEventListener('DOMContentLoaded', init);
+  function showLU(title,A,b,L,U,P){
+    const y = fwdSub(L, P ? matVec(P,b) : b);
+    const x = bwdSub(U, y);
+    statusBadge('ok', `${title} ran successfully.`);
+    els.outputs.textContent = `${title}\n\nL:\n${fixedWidthMatrix(L)}\n\nU:\n${fixedWidthMatrix(U)}\n\nx:\n${fixedWidthMatrix([x])}`;
+    els.iters.innerHTML = '';
+    Plots.blank(els.plot, 'Factorization – no plot');
+    pushHistory({title, result:`||x||≈${fmt(norm2(x))}`});
+  }
+
+  renderHistory();
+  // Ensure the page is interactive immediately
+  setWorkspace('root');
+})();

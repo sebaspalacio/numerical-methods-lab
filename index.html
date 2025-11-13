@@ -67,50 +67,50 @@
               <select id="method" class="w-full rounded-lg border p-2"></select>
             </div>
             <div>
-              <label class="block text-sm font-semibold mb-1">Acciones rápidas</label>
+              <label class="block text-sm font-semibold mb-1">Quick actions</label>
               <div class="flex flex-wrap gap-2">
                 <button id="runBtn" class="btn btn-primary" type="button">Run</button>
                 <button id="clearBtn" class="btn btn-ghost" type="button">Clear</button>
               </div>
             </div>
             <div class="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-600">
-              Selecciona un método para ver recomendaciones personalizadas y los pasos sugeridos.
+              Select a method to see personalized recommendations and suggested steps.
             </div>
           </div>
           <div id="methodGuide" class="guide-card"></div>
         </div>
         <aside class="help-pane">
-          <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500">Ayuda para tus datos</h3>
-          <p class="text-sm text-slate-600 mt-1">Expande una sección para recordar cómo escribir tus entradas.</p>
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-500">Input help</h3>
+          <p class="text-sm text-slate-600 mt-1">Expand a section to recall how to enter your data.</p>
           <div class="mt-3 space-y-2">
             <details class="help-details" open>
-              <summary>Funciones</summary>
+              <summary>Functions</summary>
               <div class="help-body">
-                Escribe expresiones como <span class="code">x**3 - 7*x + 6</span> o <span class="code">x^3</span> (se convierte a <span class="code">**</span>). Están disponibles <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span> y <span class="code">PI</span>.
+                Enter expressions such as <span class="code">x**3 - 7*x + 6</span> or <span class="code">x^3</span> (converted to <span class="code">**</span>). The helpers <span class="code">sin(x)</span>, <span class="code">cos(x)</span>, <span class="code">exp(x)</span>, <span class="code">log(x)</span>, <span class="code">sqrt(x)</span>, and <span class="code">PI</span> are available.
               </div>
             </details>
             <details class="help-details">
-              <summary>Intervalos y números</summary>
+              <summary>Intervals &amp; numbers</summary>
               <div class="help-body">
-                Usa cualquier orden para <span class="code">a</span> y <span class="code">b</span>; el sistema emplea <span class="code">[min(a,b), max(a,b)]</span>. Los números aceptan notación científica (<span class="code">1e-6</span>).
+                Use any order for <span class="code">a</span> and <span class="code">b</span>; the tool runs with <span class="code">[min(a,b), max(a,b)]</span>. Numbers accept scientific notation (<span class="code">1e-6</span>).
               </div>
             </details>
             <details class="help-details">
-              <summary>Vectores</summary>
+              <summary>Vectors</summary>
               <div class="help-body">
-                Separa componentes por espacios o saltos de línea, por ejemplo <span class="code">1 2 3</span>. Ajusta el tamaño según tu sistema.
+                Separate components with spaces or line breaks, for example <span class="code">1 2 3</span>. Match the size to your system.
               </div>
             </details>
             <details class="help-details">
               <summary>Matrices</summary>
               <div class="help-body">
-                Puedes pegar filas usando espacios o comas (<span class="code">4 -1 0</span>). Con "Build" elige filas/columnas y edita cada celda; la vista de texto se mantiene sincronizada.
+                Paste rows separated by spaces or commas (<span class="code">4 -1 0</span>). With "Build" choose rows/columns and edit each cell; the text area stays synchronized.
               </div>
             </details>
             <details class="help-details">
-              <summary>Mensajes del sistema</summary>
+              <summary>System messages</summary>
               <div class="help-body">
-                Las alertas aparecen como <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recomendación</span> o <span class="badge badge-err">Error</span> para guiarte durante la ejecución.
+                Alerts appear as <span class="badge badge-ok">OK</span>, <span class="badge badge-warn">Recommendation</span>, or <span class="badge badge-err">Error</span> to guide you during execution.
               </div>
             </details>
           </div>

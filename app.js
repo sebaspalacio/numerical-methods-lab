@@ -26,20 +26,19 @@ function normalizeExpr(src){
   if(typeof src!=='string') return '';
   src = src.normalize('NFKC');
   // dashes/minus to '-'
-  src = src.replace(/[\\u2212\\u2012-\\u2015]/g,'-');
+  src = src.replace(/[\u2212\u2012-\u2015]/g,'-');
   // times / middle dots to '*'
-  src = src.replace(/[\\u00D7\\u2715\\u2716\\u22C5\\u00B7]/g,'*');
+  src = src.replace(/[\u00D7\u2715\u2716\u22C5\u00B7]/g,'*');
   // fancy division slash to '/'
-  src = src.replace(/[\\u2215]/g,'/');
+  src = src.replace(/[\u2215]/g,'/');
   return src;
 }
 function firstInvalidChar(str){
-  const allowed=/[0-9a-zA-Z_\\s+*\\/^.(),\\-]/;
+  const allowed=/[0-9a-zA-Z_+*\/^.(),\-]/;
   for(const ch of str){
-    if(!allowed.test(ch)){
-      const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
-      return {ch,cp};
-    }
+    if(allowed.test(ch) || /\s/.test(ch)) continue;
+    const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
+    return {ch,cp};
   }
   return null;
 }
@@ -49,7 +48,7 @@ function parseFun(id){
   // allow ^ as power (convert to **)
   raw = raw.replaceAll('^','**');
   // Map 'pi' a Math.PI via with(Math){...}
-  raw = raw.replace(/\\bpi\\b/ig,'PI');
+  raw = raw.replace(/\bpi\b/ig,'PI');
   if(!/[xX]/.test(raw)) throw Error('Function must contain x');
   const bad = firstInvalidChar(raw);
   if(bad){
@@ -59,16 +58,18 @@ function parseFun(id){
   try{ void f(0); }catch(e){ throw Error('Function is not valid: '+e.message); }
   return {src:raw,f};
 }
+
+
 function parseNum(id,label=id){
   const el=document.getElementById(id); if(!el) throw Error('Missing input: '+label);
   const raw=el.value.trim().replace(/,/g,'');
-  if(!/^[-]?(\\d+(\\.\\d*)?|\\.\\d+)(e[-+]?\\d+)?$/i.test(raw))
+  if(!/^[-]?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i.test(raw))
     throw Error(`Invalid number in ${label}: “${el.value}”`);
   return Number(raw);
 }
 function parseVec(id,label=id){
   const raw=document.getElementById(id).value.trim(); if(!raw) throw Error(label+' is empty');
-  const parts=raw.split(/[ ,\\t\\n]+/).filter(Boolean);
+  const parts=raw.split(/[ ,\t\n]+/).filter(Boolean);
   const arr=parts.map(Number);
   const badIndex=arr.findIndex(v=>!Number.isFinite(v));
   if(badIndex!==-1) throw Error(`${label} has an invalid entry at position ${badIndex+1}: “${parts[badIndex]}”`);
@@ -76,8 +77,8 @@ function parseVec(id,label=id){
 }
 function parseMat(id,label=id){
   const raw=document.getElementById(id).value.trim(); if(!raw) throw Error(label+' is empty');
-  const rows=raw.split(/\\n|;/).map(r=>r.trim()).filter(Boolean);
-  const M=rows.map(r=>r.split(/[ ,\\t]+/).filter(Boolean).map(Number));
+  const rows=raw.split(/\n|;/).map(r=>r.trim()).filter(Boolean);
+  const M=rows.map(r=>r.split(/[ ,\t]+/).filter(Boolean).map(Number));
   const m=M[0].length;
   if(M.some(r=>r.length!==m)) throw Error(label+' must be rectangular (same number of columns per row)');
   const flat=M.flat(), badIndex=flat.findIndex(v=>!Number.isFinite(v));
@@ -99,7 +100,6 @@ function parsePairs(id,label=id){
   });
   return {X,Y};
 }
-
 /* ============ Linear algebra helpers ============ */
 function fwdSub(L,b){const n=L.length,y=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in forward substitution');y[i]=(b[i]-s)/L[i][i];}return y;}
 function bwdSub(U,y){const n=U.length,x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=U[i][j]*x[j];if(Math.abs(U[i][i])<1e-14)throw Error('Zero on diagonal in backward substitution');x[i]=(y[i]-s)/U[i][i];}return x;}

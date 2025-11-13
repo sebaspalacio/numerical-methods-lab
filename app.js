@@ -84,6 +84,21 @@ function parseMat(id,label=id){
   if(badIndex!==-1) throw Error(`${label} has a non-numeric value near row ${Math.floor(badIndex/m)+1}`);
   return M;
 }
+function parsePairs(id,label=id){
+  const el=document.getElementById(id); if(!el) throw Error('Missing input: '+label);
+  const raw=el.value.trim(); if(!raw) throw Error(label+' is empty');
+  const lines=raw.split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  const X=[],Y=[];
+  lines.forEach((line,idx)=>{
+    const parts=line.split(/[;,\s]+/).filter(Boolean);
+    if(parts.length!==2) throw Error(`${label} line ${idx+1} must contain exactly two values (x;y)`);
+    const [xs,ys]=parts.map(Number);
+    if(!Number.isFinite(xs)||!Number.isFinite(ys)) throw Error(`${label} line ${idx+1} has an invalid number`);
+    if(idx>0 && xs<=X[X.length-1]) throw Error(`${label} requires strictly increasing x (issue near line ${idx+1})`);
+    X.push(xs); Y.push(ys);
+  });
+  return {X,Y};
+}
 
 /* ============ Linear algebra helpers ============ */
 function fwdSub(L,b){const n=L.length,y=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in forward substitution');y[i]=(b[i]-s)/L[i][i];}return y;}
@@ -150,8 +165,6 @@ function secant(f,[L,R],x0,x1,tol,maxIt){
 }
 
 /* ============ Factorizations ============ */
-function fwdSub(L,b){const n=L.length,y=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in forward substitution');y[i]=(b[i]-s)/L[i][i];}return y;}
-function bwdSub(U,y){const n=U.length,x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=U[i][j]*x[j];if(Math.abs(U[i][i])<1e-14)throw Error('Zero on diagonal in backward substitution');x[i]=(y[i]-s)/U[i][i];}return x;}
 function luSimple(A){const n=A.length,L=eye(n),U=zeros(n,n),M=copy(A);for(let i=0;i<n-1;i++){for(let j=i+1;j<n;j++){if(M[j][i]!==0){const m=M[j][i]/M[i][i];L[j][i]=m;for(let k=i;k<n;k++)M[j][k]-=m*M[i][k];}}for(let k=i;k<n;k++)U[i][k]=M[i][k];}U[n-1][n-1]=M[n-1][n-1];return{L,U};}
 function luPartialPivot(A){const n=A.length,L=eye(n),U=zeros(n,n),P=eye(n),M=copy(A);for(let i=0;i<n-1;i++){let piv=i,mv=Math.abs(M[i][i]);for(let r=i+1;r<n;r++)if(Math.abs(M[r][i])>mv){mv=Math.abs(M[r][i]);piv=r;}if(piv!==i){[M[i],M[piv]]=[M[piv],M[i]];[P[i],P[piv]]=[P[piv],P[i]];for(let k=0;k<i;k++)[L[i][k],L[piv][k]]=[L[piv][k],L[i][k]];}for(let j=i+1;j<n;j++)if(M[j][i]!==0){const m=M[j][i]/M[i][i];L[j][i]=m;for(let k=i;k<n;k++)M[j][k]-=m*M[i][k];}for(let k=i;k<n;k++)U[i][k]=M[i][k];}U[n-1][n-1]=M[n-1][n-1];return{L,U,P};}
 function crout(A){const n=A.length,L=zeros(n,n),U=eye(n);for(let i=0;i<n;i++){for(let j=i;j<n;j++){let s=0;for(let k=0;k<i;k++)s+=L[j][k]*U[k][i];L[j][i]=A[j][i]-s;}for(let j=i+1;j<n;j++){let s=0;for(let k=0;k<i;k++)s+=L[i][k]*U[k][j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in Crout');U[i][j]=(A[i][j]-s)/L[i][i];}}return{L,U};}

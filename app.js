@@ -26,19 +26,20 @@ function normalizeExpr(src){
   if(typeof src!=='string') return '';
   src = src.normalize('NFKC');
   // dashes/minus to '-'
-  src = src.replace(/[\u2212\u2012-\u2015]/g,'-');
+  src = src.replace(/[\\u2212\\u2012-\\u2015]/g,'-');
   // times / middle dots to '*'
-  src = src.replace(/[\u00D7\u2715\u2716\u22C5\u00B7]/g,'*');
+  src = src.replace(/[\\u00D7\\u2715\\u2716\\u22C5\\u00B7]/g,'*');
   // fancy division slash to '/'
-  src = src.replace(/[\u2215]/g,'/');
+  src = src.replace(/[\\u2215]/g,'/');
   return src;
 }
 function firstInvalidChar(str){
-  const allowed=/[0-9a-zA-Z_+*\/^.(),\-]/;
+  const allowed=/[0-9a-zA-Z_\\s+\\-*/^().,]/;
   for(const ch of str){
-    if(allowed.test(ch) || /\s/.test(ch)) continue;
-    const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
-    return {ch,cp};
+    if(!allowed.test(ch)){
+      const cp = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
+      return {ch,cp};
+    }
   }
   return null;
 }
@@ -48,7 +49,7 @@ function parseFun(id){
   // allow ^ as power (convert to **)
   raw = raw.replaceAll('^','**');
   // Map 'pi' a Math.PI via with(Math){...}
-  raw = raw.replace(/\bpi\b/ig,'PI');
+  raw = raw.replace(/\\bpi\\b/ig,'PI');
   if(!/[xX]/.test(raw)) throw Error('Function must contain x');
   const bad = firstInvalidChar(raw);
   if(bad){
@@ -58,18 +59,16 @@ function parseFun(id){
   try{ void f(0); }catch(e){ throw Error('Function is not valid: '+e.message); }
   return {src:raw,f};
 }
-
-
 function parseNum(id,label=id){
   const el=document.getElementById(id); if(!el) throw Error('Missing input: '+label);
   const raw=el.value.trim().replace(/,/g,'');
-  if(!/^[-]?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i.test(raw))
+  if(!/^[-]?(\\d+(\\.\\d*)?|\\.\\d+)(e[-+]?\\d+)?$/i.test(raw))
     throw Error(`Invalid number in ${label}: “${el.value}”`);
   return Number(raw);
 }
 function parseVec(id,label=id){
   const raw=document.getElementById(id).value.trim(); if(!raw) throw Error(label+' is empty');
-  const parts=raw.split(/[ ,\t\n]+/).filter(Boolean);
+  const parts=raw.split(/[ ,\\t\\n]+/).filter(Boolean);
   const arr=parts.map(Number);
   const badIndex=arr.findIndex(v=>!Number.isFinite(v));
   if(badIndex!==-1) throw Error(`${label} has an invalid entry at position ${badIndex+1}: “${parts[badIndex]}”`);
@@ -77,29 +76,15 @@ function parseVec(id,label=id){
 }
 function parseMat(id,label=id){
   const raw=document.getElementById(id).value.trim(); if(!raw) throw Error(label+' is empty');
-  const rows=raw.split(/\n|;/).map(r=>r.trim()).filter(Boolean);
-  const M=rows.map(r=>r.split(/[ ,\t]+/).filter(Boolean).map(Number));
+  const rows=raw.split(/\\n|;/).map(r=>r.trim()).filter(Boolean);
+  const M=rows.map(r=>r.split(/[ ,\\t]+/).filter(Boolean).map(Number));
   const m=M[0].length;
   if(M.some(r=>r.length!==m)) throw Error(label+' must be rectangular (same number of columns per row)');
   const flat=M.flat(), badIndex=flat.findIndex(v=>!Number.isFinite(v));
   if(badIndex!==-1) throw Error(`${label} has a non-numeric value near row ${Math.floor(badIndex/m)+1}`);
   return M;
 }
-function parsePairs(id,label=id){
-  const el=document.getElementById(id); if(!el) throw Error('Missing input: '+label);
-  const raw=el.value.trim(); if(!raw) throw Error(label+' is empty');
-  const lines=raw.split(/\n+/).map(line=>line.trim()).filter(Boolean);
-  const X=[],Y=[];
-  lines.forEach((line,idx)=>{
-    const parts=line.split(/[;,\s]+/).filter(Boolean);
-    if(parts.length!==2) throw Error(`${label} line ${idx+1} must contain exactly two values (x;y)`);
-    const [xs,ys]=parts.map(Number);
-    if(!Number.isFinite(xs)||!Number.isFinite(ys)) throw Error(`${label} line ${idx+1} has an invalid number`);
-    if(idx>0 && xs<=X[X.length-1]) throw Error(`${label} requires strictly increasing x (issue near line ${idx+1})`);
-    X.push(xs); Y.push(ys);
-  });
-  return {X,Y};
-}
+
 /* ============ Linear algebra helpers ============ */
 function fwdSub(L,b){const n=L.length,y=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in forward substitution');y[i]=(b[i]-s)/L[i][i];}return y;}
 function bwdSub(U,y){const n=U.length,x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=U[i][j]*x[j];if(Math.abs(U[i][i])<1e-14)throw Error('Zero on diagonal in backward substitution');x[i]=(y[i]-s)/U[i][i];}return x;}
@@ -165,6 +150,8 @@ function secant(f,[L,R],x0,x1,tol,maxIt){
 }
 
 /* ============ Factorizations ============ */
+function fwdSub(L,b){const n=L.length,y=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in forward substitution');y[i]=(b[i]-s)/L[i][i];}return y;}
+function bwdSub(U,y){const n=U.length,x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=U[i][j]*x[j];if(Math.abs(U[i][i])<1e-14)throw Error('Zero on diagonal in backward substitution');x[i]=(y[i]-s)/U[i][i];}return x;}
 function luSimple(A){const n=A.length,L=eye(n),U=zeros(n,n),M=copy(A);for(let i=0;i<n-1;i++){for(let j=i+1;j<n;j++){if(M[j][i]!==0){const m=M[j][i]/M[i][i];L[j][i]=m;for(let k=i;k<n;k++)M[j][k]-=m*M[i][k];}}for(let k=i;k<n;k++)U[i][k]=M[i][k];}U[n-1][n-1]=M[n-1][n-1];return{L,U};}
 function luPartialPivot(A){const n=A.length,L=eye(n),U=zeros(n,n),P=eye(n),M=copy(A);for(let i=0;i<n-1;i++){let piv=i,mv=Math.abs(M[i][i]);for(let r=i+1;r<n;r++)if(Math.abs(M[r][i])>mv){mv=Math.abs(M[r][i]);piv=r;}if(piv!==i){[M[i],M[piv]]=[M[piv],M[i]];[P[i],P[piv]]=[P[piv],P[i]];for(let k=0;k<i;k++)[L[i][k],L[piv][k]]=[L[piv][k],L[i][k]];}for(let j=i+1;j<n;j++)if(M[j][i]!==0){const m=M[j][i]/M[i][i];L[j][i]=m;for(let k=i;k<n;k++)M[j][k]-=m*M[i][k];}for(let k=i;k<n;k++)U[i][k]=M[i][k];}U[n-1][n-1]=M[n-1][n-1];return{L,U,P};}
 function crout(A){const n=A.length,L=zeros(n,n),U=eye(n);for(let i=0;i<n;i++){for(let j=i;j<n;j++){let s=0;for(let k=0;k<i;k++)s+=L[j][k]*U[k][i];L[j][i]=A[j][i]-s;}for(let j=i+1;j<n;j++){let s=0;for(let k=0;k<i;k++)s+=L[i][k]*U[k][j];if(Math.abs(L[i][i])<1e-14)throw Error('Zero on diagonal in Crout');U[i][j]=(A[i][j]-s)/L[i][i];}}return{L,U};}
@@ -358,227 +345,226 @@ const METHODS_BY_WS={root:METHODS_ROOT,direct:METHODS_DIRECT,iter:METHODS_ITER,i
 
 const METHOD_GUIDES={
   incremental:{
-    title:'Incremental search',
-    summary:'Scan f(x) from the starting point a with step Δ until you detect a sign change.',
+    title:'Búsqueda incremental',
+    summary:'Explora f(x) desde el punto inicial a con saltos de tamaño Δ hasta encontrar un cambio de signo.',
     checklist:[
-      'Provide f(x), the start point a, the step Δ, and the maximum number of steps.',
-      'The sign of Δ controls the direction; raise “Max steps” to cover a wider interval.'
+      'Completa f(x), el punto inicial a, el paso Δ y el número máximo de pasos.',
+      'El signo de Δ define la dirección; aumenta «Max steps» para cubrir un intervalo mayor.'
     ],
     reminders:[
-      'If no sign change appears, tweak Δ or move the starting point.'
+      'Si no aparece un cambio de signo, ajusta Δ o mueve el punto inicial.'
     ]
   },
   bisection:{
-    title:'Bisection',
-    summary:'Shrink the bracket by halving it while the endpoints keep opposite signs.',
+    title:'Bisección',
+    summary:'Reduce el intervalo dividiéndolo por la mitad mientras se mantenga el cambio de signo en los extremos.',
     checklist:[
-      'Enter f(x), endpoints a and b (in any order), the tolerance, and the max iterations.',
-      'Before running, confirm that f(a) and f(b) have opposite signs.'
+      'Proporciona f(x), los extremos a y b (en cualquier orden), la tolerancia y el máximo de iteraciones.',
+      'Comprueba antes de ejecutar que f(a) y f(b) tengan signos opuestos.'
     ],
     reminders:[
-      'If no sign change exists, find a new interval or try incremental search.'
+      'Si no hay cambio de signo, ubica un nuevo intervalo o usa búsqueda incremental.'
     ]
   },
   falsePosition:{
-    title:'False position',
-    summary:'Build secants with the bracket endpoints to approximate the root.',
+    title:'Falsa posición',
+    summary:'Calcula secantes sucesivas utilizando siempre los extremos del intervalo para aproximar la raíz.',
     checklist:[
-      'Provide f(x), the interval [a,b], the tolerance, and the max iterations.',
-      'Use it when you already have a sign-change bracket and want faster convergence than bisection.'
+      'Indica f(x), el intervalo [a,b], la tolerancia y el máximo de iteraciones.',
+      'Úsala cuando ya conoces un intervalo con cambio de signo y buscas convergencia más rápida que la bisección.'
     ],
     reminders:[
-      'If iterations stall at one endpoint, adjust the bracket or switch to the secant method.'
+      'Si las iteraciones se estancan en un extremo, ajusta el intervalo o cambia al método de la secante.'
     ]
   },
   fixedPoint:{
-    title:'Fixed point',
-    summary:'Iterate xₖ₊₁ = g(xₖ) within a stable interval to satisfy f(x)=0.',
+    title:'Punto fijo',
+    summary:'Itera xₖ₊₁ = g(xₖ) dentro de un intervalo estable para localizar un punto fijo donde f(x)=0.',
     checklist:[
-      'Enter f(x), g(x), the interval [a,b], the seed x₀, the tolerance, and the max iterations.',
-      'Ensure g(x) keeps the iterates inside the chosen interval.'
+      'Ingresa f(x), g(x), el intervalo [a,b], la semilla x₀, la tolerancia y el máximo de iteraciones.',
+      'Verifica que g(x) mantenga las iteraciones dentro del intervalo elegido.'
     ],
     reminders:[
-      'If iterates leave the range, adjust g(x), the seed, or tighten the interval.'
+      'Si la iteración se sale de rango, ajusta g(x), la semilla o acota mejor el intervalo.'
     ]
   },
   newton:{
     title:'Newton-Raphson',
-    summary:'Use fʼ(x) to obtain quadratic convergence near the root.',
+    summary:'Aprovecha la derivada de f(x) para alcanzar convergencia cuadrática cerca de la raíz.',
     checklist:[
-      'Define f(x), the initial guess x₀, the tolerance, and the iteration limit.',
-      'Pick x₀ close to the root and avoid areas where fʼ(x) ≈ 0.'
+      'Define f(x), el valor inicial x₀, la tolerancia y el número máximo de iteraciones.',
+      'Escoge x₀ cercano a la raíz y evita zonas donde fʼ(x)≈0.'
     ],
     reminders:[
-      'If the denominator nears zero, change the seed or try the secant method.'
+      'Si el denominador se acerca a cero, cambia la semilla o prueba con la secante.'
     ]
   },
   secant:{
-    title:'Secant',
-    summary:'Approximate the derivative with consecutive evaluations instead of computing fʼ(x).',
+    title:'Secante',
+    summary:'Aproxima la derivada con dos evaluaciones consecutivas sin calcular fʼ(x) explícitamente.',
     checklist:[
-      'Provide f(x), a reference interval [a,b], seeds x₀ and x₁, the tolerance, and the max iterations.',
-      'Keep the seeds within or near the interval for stability.'
+      'Proporciona f(x), un intervalo de referencia [a,b], las semillas x₀ y x₁, la tolerancia y el máximo de iteraciones.',
+      'Comprueba que los nuevos puntos permanezcan en el intervalo definido.'
     ],
     reminders:[
-      'If iterates exit the interval or the denominator gets small, adjust the seeds.'
+      'Si el método sale del intervalo o el denominador es pequeño, reajusta las semillas.'
     ]
   },
   luSimple:{
-    title:'LU (simple)',
-    summary:'Factor A into L and U without pivoting; best for well-conditioned matrices.',
+    title:'LU sin pivoteo',
+    summary:'Factoriza A≈LU directamente para resolver Ly=b y luego Ux=y.',
     checklist:[
-      'Enter a square matrix A and the vector b.',
-      'Switch to partial pivoting if a pivot approaches zero.'
+      'Ingresa una matriz cuadrada A y el vector b asociado.',
+      'Adecuado para matrices bien condicionadas sin ceros en pivotes.'
     ],
     reminders:[
-      'Check that the diagonal of A has no zeros.'
+      'Si surge un pivote cercano a cero, cambia al método con pivoteo parcial.'
     ]
   },
   luPP:{
-    title:'LU (partial pivot)',
-    summary:'Swap rows when needed to obtain a more stable LU factorization.',
+    title:'LU con pivoteo parcial',
+    summary:'Intercambia filas cuando es necesario para obtener una factorización LU más estable.',
     checklist:[
-      'Provide square A and b; the method outputs L, U, and permutation matrix P.',
-      'Ideal when A has small or zero diagonal entries.'
+      'Usa una matriz cuadrada A y el vector b; la matriz P registra los intercambios.',
+      'Ideal cuando la diagonal de A contiene valores pequeños o nulos.'
     ],
     reminders:[
-      'If A is singular the process stops; verify the data.'
+      'Consulta la matriz P para entender el reordenamiento aplicado.'
     ]
   },
   crout:{
     title:'Crout',
-    summary:'Produces L with free diagonal and unit-diagonal U to solve Ax=b.',
+    summary:'Genera L con diagonal libre y U con unos para resolver el sistema en dos pasos.',
     checklist:[
-      'Enter the square matrix A and the vector b.',
-      'Use it when you want L to keep the scale of the pivots.'
+      'Introduce la matriz cuadrada A y el vector b a resolver.',
+      'Útil cuando buscas que L conserve la escala de los pivotes.'
     ],
     reminders:[
-      'Ensure no diagonal pivot is zero before proceeding.'
+      'Revisa que ningún pivote diagonal sea cero antes de continuar.'
     ]
   },
   doolittle:{
     title:'Doolittle',
-    summary:'Builds L with ones on the diagonal and a general U.',
+    summary:'Construye L con unos en la diagonal superior y U general.',
     checklist:[
-      'Enter the square matrix A and the matching vector b.',
-      'Similar to Crout but normalizes the diagonal of L to one.'
+      'Ingresa la matriz cuadrada A y el vector b correspondiente.',
+      'Comparte estructura con Crout pero normaliza la diagonal de L a uno.'
     ],
     reminders:[
-      'If a pivot vanishes, consider partial pivoting.'
+      'Si aparecen pivotes nulos, considera aplicar pivoteo parcial.'
     ]
   },
   choleskyCourse:{
     title:'Cholesky',
-    summary:'Factor SPD matrices into L·U (L lower, U upper).',
+    summary:'Descompone matrices simétricas definidas positivas en el producto L·U.',
     checklist:[
-      'Provide a symmetric positive-definite matrix A and vector b.',
-      'Stops immediately if a non-positive pivot is detected.'
+      'Proporciona una matriz simétrica (SPD) A y el vector b.',
+      'Ideal para sistemas SPD; se detiene si detecta un pivote no positivo.'
     ],
     reminders:[
-      'If it fails, re-check the symmetry and positivity of A before retrying.'
+      'Si falla, verifica la simetría y positividad de A antes de reintentar.'
     ]
   },
   jacobi:{
     title:'Jacobi',
-    summary:'Update all variables in parallel using the previous iterate.',
+    summary:'Actualiza todas las variables en paralelo usando la iteración anterior completa.',
     checklist:[
-      'Enter A, b, the initial vector x₀, tolerance, and Nmax.',
-      'Ensure the diagonal of A has no zeros and watch ρ(T) to assess convergence.'
+      'Indica A, b, el vector inicial x₀, la tolerancia y Nmax.',
+      'Asegúrate de que la diagonal de A no tenga ceros y observa ρ(T) para evaluar convergencia.'
     ],
     reminders:[
-      'If ρ(T) ≥ 1, reorder the system or switch methods.'
+      'Si ρ(T)≥1, reordena el sistema o cambia de método iterativo.'
     ]
   },
   gs:{
     title:'Gauss-Seidel',
-    summary:'Reuse freshly updated values to converge faster than Jacobi.',
+    summary:'Reutiliza los valores recién actualizados para acelerar la convergencia respecto a Jacobi.',
     checklist:[
-      'Enter A, b, the initial vector x₀, tolerance, and Nmax.',
-      'Works best with diagonally dominant matrices; monitor ρ(T).'
+      'Ingresa A, b, el vector inicial x₀, la tolerancia y Nmax.',
+      'Funciona mejor con matrices diagonalmente dominantes; revisa ρ(T).' 
     ],
     reminders:[
-      'If it diverges, try reordering rows or switch to SOR with a suitable ω.'
+      'Si diverge, intenta reordenar filas o cambia a SOR con un ω apropiado.'
     ]
   },
   sor:{
     title:'SOR',
-    summary:'Add a relaxation factor ω to speed up Gauss-Seidel.',
+    summary:'Introduce un factor de relajación ω para mejorar la velocidad de Gauss-Seidel.',
     checklist:[
-      'Provide A, b, the initial vector x₀, ω (0<ω<2), tolerance, and Nmax.',
-      'Start near ω≈1 and adjust based on the convergence rate.'
+      'Define A, b, el vector inicial x₀, el parámetro ω (0<ω<2), la tolerancia y Nmax.',
+      'Comienza con ω≈1 y ajusta según el ritmo de convergencia.'
     ],
     reminders:[
-      'An out-of-range ω triggers an error; if ρ(T) stays large, try another ω.'
+      'Un ω fuera de rango genera error; si ρ(T) es grande, prueba otro ω.'
     ]
   },
   vandermonde:{
     title:'Vandermonde',
-    summary:'Solve the Vandermonde system to get the interpolating polynomial coefficients.',
+    summary:'Obtiene los coeficientes del polinomio interpolante resolviendo el sistema de Vandermonde.',
     checklist:[
-      'Enter x;y pairs (one per line) to build the matrix.',
-      'Best for a few points; can become unstable with large datasets.'
+      'Introduce pares x;y (uno por línea) para formar la matriz.',
+      'Adecuado para pocos puntos; puede volverse inestable con conjuntos grandes.'
     ],
     reminders:[
-      'Sort points by x to interpret the resulting polynomial more easily.'
+      'Ordena los puntos por x para interpretar mejor el polinomio obtenido.'
     ]
   },
   newtonDD:{
-    title:'Newton (divided differences)',
-    summary:'Build the divided-difference table and Newton form of the polynomial.',
+    title:'Newton (diferencias divididas)',
+    summary:'Construye la tabla de diferencias divididas y la forma de Newton del polinomio.',
     checklist:[
-      'Enter ordered x;y pairs; the triangular table is created automatically.',
-      'Lets you append new points while reusing previous results.'
+      'Ingresa pares x;y ordenados; se genera la tabla triangular automáticamente.',
+      'Permite añadir nuevos puntos reutilizando resultados previos.'
     ],
     reminders:[
-      'Avoid repeated x-values to prevent division by zero.'
+      'Evita repetir valores de x para impedir divisiones por cero.'
     ]
   },
   lagrange:{
     title:'Lagrange',
-    summary:'Sum the weighted basis polynomials Lᵢ(x) to form P(x).',
+    summary:'Suma las bases Lᵢ(x) ponderadas para construir el polinomio interpolante.',
     checklist:[
-      'Provide the x;y pairs; the bases and final coefficients are computed.',
-      'Makes it easy to evaluate P(x) anywhere without solving extra systems.'
+      'Escribe los pares x;y; se calcularán las bases y los coeficientes finales.',
+      'Facilita evaluar P(x) en cualquier punto sin resolver sistemas adicionales.'
     ],
     reminders:[
-      'With many points the polynomial may oscillate (Runge phenomenon).'
+      'Con muchos puntos, los polinomios pueden oscilar (fenómeno de Runge).' 
     ]
   },
   splLin:{
-    title:'Linear splines',
-    summary:'Connect each node pair with continuous line segments.',
+    title:'Splines lineales',
+    summary:'Conecta cada par de nodos con segmentos rectos continuos.',
     checklist:[
-      'Enter x;y pairs with increasing x.',
-      'Great for quick approximations without oscillations.'
+      'Ingresa pares x;y con x en orden creciente.',
+      'Ideal para aproximaciones rápidas sin oscilaciones.'
     ],
     reminders:[
-      'Add more nodes if you need to capture more curvature.'
+      'Añade más nodos si necesitas capturar más curvatura.'
     ]
   },
   splQuad:{
-    title:'Quadratic splines',
-    summary:'Use quadratic pieces with value and first-derivative continuity.',
+    title:'Splines cuadráticos',
+    summary:'Genera tramos cuadráticos con continuidad en valor y primera derivada.',
     checklist:[
-      'Enter the x;y pairs; a boundary condition closes the system.',
-      'Provides extra smoothness over linear splines.'
+      'Indica pares x;y; se fija una condición inicial para cerrar el sistema.',
+      'Brinda suavidad adicional frente a los splines lineales.'
     ],
     reminders:[
-      'Make sure each x-value is unique.'
+      'Asegúrate de que los valores de x sean distintos para cada punto.'
     ]
   },
   splCub:{
-    title:'Natural cubic splines',
-    summary:'Deliver a smooth interpolation with zero second derivatives at the ends.',
+    title:'Splines cúbicos naturales',
+    summary:'Produce una interpolación suave con derivadas segunda nulas en los extremos.',
     checklist:[
-      'Enter ordered x;y pairs to solve the tridiagonal system.',
-      'Guarantees continuity in value plus first and second derivatives.'
+      'Introduce pares x;y ordenados para resolver el sistema tridiagonal.',
+      'Garantiza continuidad en valor, primera y segunda derivada.'
     ],
     reminders:[
-      'For different boundary conditions, consider another spline variant.'
+      'Si prefieres otras condiciones de borde, considera otro tipo de spline.'
     ]
   }
 };
-
 
 /* ============ UI ============ */
 const els={
@@ -656,19 +642,19 @@ function renderGuide(){
   const id = els.method.value;
   const info = METHOD_GUIDES[id];
   if(!info){
-    els.methodGuide.innerHTML = '<div class="text-sm text-slate-600">Select a method to see the tailored suggestions.</div>';
+    els.methodGuide.innerHTML = '<div class="text-sm text-slate-600">Selecciona un método para ver las sugerencias específicas.</div>';
     return;
   }
   const checklist = info.checklist?.length
-    ? '<div><h5 class="text-sm font-semibold text-slate-700">To get started</h5><ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">'+info.checklist.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
+    ? '<div><h5 class="text-sm font-semibold text-slate-700">Para empezar</h5><ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">'+info.checklist.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
     : '';
   const reminders = info.reminders?.length
-    ? '<div class="pt-2 border-t border-blue-100 mt-2"><h5 class="text-sm font-semibold text-slate-700">Quick tips</h5><ul class="list-disc pl-5 text-sm text-slate-600 space-y-1 mt-1">'+info.reminders.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
+    ? '<div class="pt-2 border-t border-blue-100 mt-2"><h5 class="text-sm font-semibold text-slate-700">Consejos rápidos</h5><ul class="list-disc pl-5 text-sm text-slate-600 space-y-1 mt-1">'+info.reminders.map(item=>'<li>'+item+'</li>').join('')+'</ul></div>'
     : '';
   els.methodGuide.innerHTML = `
     <div class="space-y-3">
       <div>
-        <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Method guide</p>
+        <p class="text-xs font-semibold uppercase tracking-widest text-blue-600">Guía del método</p>
         <h4 class="font-semibold text-slate-900">${info.title}</h4>
         <p class="text-sm text-slate-600 mt-1">${info.summary}</p>
       </div>
